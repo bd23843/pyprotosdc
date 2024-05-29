@@ -12,7 +12,7 @@ from sdc11073.xml_types.dpws_types import ThisDeviceType, ThisModelType
 from sdc11073.xml_types import pm_qnames
 from sdc11073.xml_types import pm_types
 from sdc11073.xml_types import msg_types
-from sdc11073.mdib import descriptorcontainers
+from sdc11073.mdib import descriptorcontainers, statecontainers
 from pyprotosdc.clientmdib import GClientMdibContainer
 from sdc11073.roles.waveformprovider import waveforms
 from sdc11073.loghelper import basic_logging_setup
@@ -85,6 +85,13 @@ class TestClientSomeDeviceGRPC(unittest.TestCase):
         self._loc_validators = [pm_types.InstanceIdentifier('Validator', extension_string='System')]
         loc = SdcLocation(fac='tklx', poc='CU1', bed='bed1')
         self.sdc_provider.set_location(loc, self._loc_validators)
+        patient_ctxt_descriptors = self.sdc_provider.mdib.descriptions.NODETYPE.get(pm_qnames.PatientContextDescriptor)
+        descr = patient_ctxt_descriptors[0]
+
+        pat = statecontainers.PatientContextStateContainer(descr)
+        pat.CoreData.Givenname = 'Bernd'
+        pat.CoreData.Familyname = 'Deichmann'
+        self.sdc_provider.mdib.context_states.add_object(pat)
 
         self.sdc_provider.publish()
         self.dev_sequence_id = self.sdc_provider.mdib.sequence_id

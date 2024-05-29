@@ -197,10 +197,10 @@ _to_p_funcs_by_pm: dict[Any, to_p_func_type] = {
 }
 
 
-_to_p_funcs_by_p: dict[Any, to_p_func_type] = {
+_to_one_of_p_funcs_by_p: dict[Any, to_p_func_type] = {
     InstanceIdentifierOneOfMsg: instance_identifier_to_oneof_p_func,
     BaseDemographicsOneOfMsg: base_demographics_to_oneof_p_func,
-    # PatientDemographicsCoreDataOneOfMsg: base_demographics_to_oneof_p_func,
+    PatientDemographicsCoreDataOneOfMsg: base_demographics_to_oneof_p_func,
     PersonReferenceOneOfMsg: person_reference_to_oneof_p_func,
     AbstractStateOneOfMsg: state_to_one_of_p_func,
     AbstractMetricStateOneOfMsg: state_to_one_of_p_func,
@@ -294,10 +294,10 @@ def map_generic_to_p(pm_src: PropertyBasedPMType,
         return p_dest
 
     # is there a special handler for whole p_dest class?
-    special_handler_p = _to_p_funcs_by_p.get(p_dest.__class__)
-    if special_handler_p:
-        _logger().debug('%s special handling cls=%s, %s', indent, p_dest.__class__.__name__, special_handler_p.__name__)
-        special_handler_p(pm_src, p_dest, map_generic_to_p, recurse_count + 1)
+    to_one_of_p_func = _to_one_of_p_funcs_by_p.get(p_dest.__class__)
+    if to_one_of_p_func:
+        _logger().debug('%s special handling cls=%s, %s', indent, p_dest.__class__.__name__, to_one_of_p_func.__name__)
+        to_one_of_p_func(pm_src, p_dest, map_generic_to_p, recurse_count + 1)
         _logger().debug('%s special handling cls=%s done', indent, p_dest.__class__.__name__)
         return p_dest
 
@@ -358,11 +358,11 @@ def map_generic_to_p(pm_src: PropertyBasedPMType,
             except AttributeError as ex:
                 raise
 
-            special_handler_p = _to_p_funcs_by_p.get(p_dest_current.__class__)
-            if special_handler_p is not None:
+            to_one_of_p_func = _to_one_of_p_funcs_by_p.get(p_dest_current.__class__)
+            if to_one_of_p_func is not None:
                 _logger().debug('%s special p_dest handling %s = %s', indent, p_dest_current.__class__.__name__,
-                                special_handler_p.__name__)
-                special_handler_p(value, p_dest_current, map_generic_to_p, recurse_count)
+                                to_one_of_p_func.__name__)
+                to_one_of_p_func(value, p_dest_current, map_generic_to_p, recurse_count)
                 _logger().debug('%s special p_dest handling %s done', indent, p_dest_current.__class__.__name__)
                 continue
 
