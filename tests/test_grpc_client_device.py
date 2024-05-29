@@ -41,11 +41,14 @@ class SomeDevice(GSdcDevice):
         device_mdib_container = ProviderMdib.from_string(mdib_xml_string, log_prefix=log_prefix)
         # set Metadata
         device_mdib_container.instance_id = 42
-        mds_descriptor = device_mdib_container.descriptions.NODETYPE.get_one(pm_qnames.MdsDescriptor)
-        mds_descriptor.MetaData.Manufacturer = [pm_types.LocalizedText(u'Dräger')]
-        mds_descriptor.MetaData.ModelName = [pm_types.LocalizedText(model.ModelName[0].text)]
-        mds_descriptor.MetaData.SerialNumber = ['ABCD-1234']
-        mds_descriptor.MetaData.ModelNumber = '0.99'
+        for mds_descriptor in device_mdib_container.descriptions.NODETYPE.get(pm_qnames.MdsDescriptor):
+            # mds_descriptor = device_mdib_container.descriptions.NODETYPE.get_one(pm_qnames.MdsDescriptor)
+            if mds_descriptor.MetaData is None:
+                mds_descriptor.MetaData = pm_types.MetaData()
+            mds_descriptor.MetaData.Manufacturer = [pm_types.LocalizedText(u'Dräger')]
+            mds_descriptor.MetaData.ModelName = [pm_types.LocalizedText(model.ModelName[0].text)]
+            mds_descriptor.MetaData.SerialNumber = ['ABCD-1234']
+            mds_descriptor.MetaData.ModelNumber = '0.99'
         super(SomeDevice, self).__init__(wsdiscovery, my_uuid, model, device, device_mdib_container, validate,
                                          # registerDefaultOperations=True,
                                          sslContext=sslContext, logLevel=logLevel, log_prefix=log_prefix,
@@ -78,7 +81,7 @@ class TestClientSomeDeviceGRPC(unittest.TestCase):
         basic_logging_setup()
         self.wsd = GDiscovery()
         self.wsd.start()
-        self.sdc_provider = SomeDevice.fromMdibFile(self.wsd, None, 'mdib_tns.xml', log_prefix='<Final> ')
+        self.sdc_provider = SomeDevice.fromMdibFile(self.wsd, None, 'mdib_two_mds.xml', log_prefix='<Final> ')
         self.sdc_provider.mdib.mdibVersion = 42
         self.sdc_provider.start_all(startRealtimeSampleLoop=False)
         self._loc_validators = [pm_types.InstanceIdentifier('Validator', extension_string='System')]
