@@ -54,7 +54,6 @@ from org.somda.protosdc.proto.model.biceps.workflowcontextstate_pb2 import Workf
 from org.somda.protosdc.proto.model.common import common_types_pb2
 from sdc11073.mdib.containerbase import ContainerBase
 from sdc11073.mdib.statecontainers import (AllowedValuesType)
-from sdc11073.xml_types.dataconverters import DecimalConverter
 from sdc11073.xml_types.pm_types import AllowedValue, BaseDemographics, PatientDemographicsCoreData
 from sdc11073.xml_types.pm_types import ApplyAnnotation, CauseInfo, RemedyInfo, ActivateOperationDescriptorArgument
 from sdc11073.xml_types.pm_types import LocalizedText, CodedValue, TranslationType, Annotation
@@ -130,7 +129,6 @@ from .pmtypesmapper import (instance_identifier_to_oneof_p_func,
                             instance_identifier_from_oneof_p,
                             person_reference_from_oneof_p,
                             base_demographics_from_oneof_p,
-                            patient_demographics_core_data_from_oneof_p,
                             _realtime_array_from_p,
                             localized_text_from_p,
                             node_text_qname_to_p,
@@ -202,8 +200,8 @@ _to_p_funcs_by_pm: dict[Any, to_p_func_type] = {
 _to_p_funcs_by_p: dict[Any, to_p_func_type] = {
     InstanceIdentifierOneOfMsg: instance_identifier_to_oneof_p_func,
     BaseDemographicsOneOfMsg: base_demographics_to_oneof_p_func,
+    # PatientDemographicsCoreDataOneOfMsg: base_demographics_to_oneof_p_func,
     PersonReferenceOneOfMsg: person_reference_to_oneof_p_func,
-    PatientDemographicsCoreDataOneOfMsg: base_demographics_to_oneof_p_func,
     AbstractStateOneOfMsg: state_to_one_of_p_func,
     AbstractMetricStateOneOfMsg: state_to_one_of_p_func,
     AbstractAlertStateOneOfMsg: state_to_one_of_p_func,
@@ -244,11 +242,12 @@ _from_p_factories: dict[Any, from_p_factory_type] = {
     AllowedValuesType: allowed_values_from_p_func  # needed because AllowedValue has no is_optional member.
 }
 
-_from_oneof_p_factories: dict[Any, from_p_factory_type] = {
+
+_from_one_of_p_factories: dict[Any, from_p_factory_type] = {
     InstanceIdentifierOneOfMsg: instance_identifier_from_oneof_p,
     PersonReferenceOneOfMsg: person_reference_from_oneof_p,
     BaseDemographicsOneOfMsg: base_demographics_from_oneof_p,
-    PatientDemographicsCoreDataOneOfMsg: patient_demographics_core_data_from_oneof_p,
+    PatientDemographicsCoreDataOneOfMsg: base_demographics_from_oneof_p,
     RealTimeValueTypeMsg: _realtime_array_from_p,
     LocalizedTextMsg: localized_text_from_p,
 }
@@ -496,7 +495,7 @@ def map_generic_from_p(p: GeneratedProtocolMessageType,
     indent = '     ' * recurse_count
 
     if pm_dest is None:
-        pm_factory = _from_oneof_p_factories.get(p.__class__)
+        pm_factory = _from_one_of_p_factories.get(p.__class__)
         if pm_factory:
             _logger().debug('%s special factory for class %s = %s', indent, p.__class__.__name__, pm_factory.__name__)
             return pm_factory(p, map_generic_from_p, recurse_count + 1)
@@ -682,12 +681,11 @@ def map_generic_from_p(p: GeneratedProtocolMessageType,
                 if isinstance(dest_type, SubElementListProperty):
                     dest_list = getattr(pm_dest, name)
                     for elem in p_src:
-                        # special_handler = _from_special_funcs.get(elem.__class__)
-                        special_handler = _from_oneof_p_factories.get(elem.__class__)
-                        if special_handler:
+                        pm_factory = _from_one_of_p_factories.get(elem.__class__)
+                        if pm_factory:
                             _logger().debug('%s special list elem handling %s = %s', indent, elem.__class__.__name__,
-                                            special_handler.__name__)
-                            pm_value = special_handler(elem, map_generic_from_p, recurse_count + 1)
+                                            pm_factory.__name__)
+                            pm_value = pm_factory(elem, map_generic_from_p, recurse_count + 1)
                             dest_list.append(pm_value)
                             _logger().debug('%s special list elem handling %s done', indent, elem.__class__.__name__)
                         else:
@@ -721,12 +719,12 @@ def map_generic_from_p(p: GeneratedProtocolMessageType,
                     raise
                 p_src = getattr(p_current_entry_point, p_name)
 
-                special_handler_src_cls = _from_oneof_p_factories.get(p_src.__class__)
+                pm_factory = _from_one_of_p_factories.get(p_src.__class__)
 
-                if special_handler_src_cls:
+                if pm_factory:
                     _logger().debug('%s special handling src_cls  %s = %s', indent, p_src.__class__.__name__,
-                                    special_handler_src_cls.__name__)
-                    value = special_handler_src_cls(p_src, map_generic_from_p, recurse_count + 1)
+                                    pm_factory.__name__)
+                    value = pm_factory(p_src, map_generic_from_p, recurse_count + 1)
                     setattr(pm_dest, name, value)
                     _logger().debug('%s special handling src_cls  %s done', indent, p_src.__class__.__name__)
                     continue

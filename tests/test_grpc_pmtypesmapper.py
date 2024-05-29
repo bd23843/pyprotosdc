@@ -217,7 +217,24 @@ class TestPmtypesMapper(unittest.TestCase):
         bd_max.Birthname = 'Meyer'
         bd_max.Title = 'Dr.'
         bd_max.Sex = pm_types.Sex.FEMALE
-        bd_min = pm_types.BaseDemographics()
+        bd_max.Height = pm_types.Measurement(Decimal('1.88'), pm_types.CodedValue('height_code'))
+        bd_min = pm_types.PatientDemographicsCoreData()
+        bd_min.Givenname = 'Charles'  # at least one member must be set., otherwise mapping fails
+        for obj in (bd_max, bd_min):
+            self.check_convert(obj)
+
+    def test_neonatal_patient_demographics_core_data(self):
+        bd_max = pm_types.NeonatalPatientDemographicsCoreData()
+        bd_max.Givenname = 'Charles'
+        bd_max.Middlename = ['M.']
+        bd_max.Familyname = 'Schulz'
+        bd_max.Birthname = 'Meyer'
+        bd_max.Title = 'Dr.'
+        bd_max.Sex = pm_types.Sex.FEMALE
+        bd_max.Height = pm_types.Measurement(Decimal('0.41'), pm_types.CodedValue('height_code'))
+        bd_max.HeadCircumference = pm_types.Measurement(Decimal('0.25'), pm_types.CodedValue('circum_code'))
+        bd_min = pm_types.NeonatalPatientDemographicsCoreData()
+        bd_min.Givenname = 'Charles'  # at least one member must be set., otherwise mapping fails
         for obj in (bd_max, bd_min):
             self.check_convert(obj)
 

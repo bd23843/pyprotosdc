@@ -157,16 +157,6 @@ def _base_demographics_to_p(bd: BaseDemographics, p: BaseDemographicsMsg) -> Bas
     return p
 
 
-def _base_demographics_from_p(p: BaseDemographicsMsg) -> BaseDemographics:
-    ret = BaseDemographics()
-    ret.Givenname = string_value_from_p(p, 'givenname')
-    ret.Familyname = string_value_from_p(p, 'familyname')
-    ret.Birthname = string_value_from_p(p, 'birthname')
-    ret.Middlename.extend(p.middlename)
-    ret.Title = string_value_from_p(p, 'title')
-    return ret
-
-
 def base_demographics_to_oneof_p_func(bd: BaseDemographics,
                                       p: BaseDemographicsOneOfMsg,
                                       recurse_func: Callable,
@@ -196,18 +186,22 @@ def base_demographics_to_oneof_p(bd: BaseDemographics,
 def base_demographics_from_oneof_p(p: BaseDemographicsOneOfMsg,
                                    recurse_func: Callable,
                                    recurse_count: int) -> BaseDemographics:
-    return _base_demographics_from_p(p.base_demographics)
-
-
-def patient_demographics_core_data_from_oneof_p(p: PatientDemographicsCoreDataOneOfMsg,
-                                                recurse_func: Callable,
-                                                recurse_count: int) -> PatientDemographicsCoreData:
-    if p.HasField('neonatal_patient_demographics_core_data'):
-        return recurse_func(p.neonatal_patient_demographics_core_data, None, recurse_count + 1)
-    elif p.HasField('patient_demographics_core_data'):
-        return recurse_func(p.patient_demographics_core_data, None, recurse_count + 1)
-    else:
-        raise TypeError(f'cannot convert {p.__class__.__name__}')
+    which = p.WhichOneof(p.DESCRIPTOR.oneofs[0].name)
+    if which == 'base_demographics':
+        p_src = p.base_demographics
+        ret = BaseDemographics()
+        ret.Givenname = string_value_from_p(p_src, 'givenname')
+        ret.Familyname = string_value_from_p(p_src, 'familyname')
+        ret.Birthname = string_value_from_p(p_src, 'birthname')
+        ret.Middlename.extend(p_src.middlename)
+        ret.Title = string_value_from_p(p_src, 'title')
+        return ret
+    elif which == 'neonatal_patient_demographics_core_data':
+        ret = NeonatalPatientDemographicsCoreData()
+        return recurse_func(p.neonatal_patient_demographics_core_data, ret, recurse_count +1)
+    elif which == 'patient_demographics_core_data':
+        ret = PatientDemographicsCoreData()
+        return recurse_func(p.patient_demographics_core_data, ret, recurse_count +1)
 
 
 def person_reference_to_oneof_p_func(pr: PersonReference,
