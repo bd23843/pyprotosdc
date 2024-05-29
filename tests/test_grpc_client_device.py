@@ -38,7 +38,6 @@ class SomeDevice(GSdcDevice):
         device = ThisDeviceType(friendly_name='Py SomeDevice',
                                 firmware_version='0.99',
                                 serial_number='12345')
-#        log_prefix = '' if not ident else '<{}>:'.format(ident)
         device_mdib_container = ProviderMdib.from_string(mdib_xml_string, log_prefix=log_prefix)
         # set Metadata
         device_mdib_container.instance_id = 42
@@ -80,7 +79,7 @@ class TestClientSomeDeviceGRPC(unittest.TestCase):
         # self._log_handler = _start_logger()
         self.wsd = GDiscovery()
         self.wsd.start()
-        self.sdc_provider = SomeDevice.fromMdibFile(self.wsd, None, '70041_MDIB_Final.xml', log_prefix='<Final> ')
+        self.sdc_provider = SomeDevice.fromMdibFile(self.wsd, None, 'mdib_tns.xml', log_prefix='<Final> ')
         self.sdc_provider.mdib.mdibVersion = 42
         self.sdc_provider.start_all(startRealtimeSampleLoop=False)
         self._loc_validators = [pm_types.InstanceIdentifier('Validator', extension_string='System')]
@@ -148,7 +147,8 @@ class TestClientSomeDeviceGRPC(unittest.TestCase):
         self.sdc_consumer.subscribe_all()
         cl_mdib = GClientMdibContainer(self.sdc_consumer)
         cl_mdib.initMdib()
-        metric_handle = '0x34F0434A'
+        metrics = cl_mdib.descriptions.NODETYPE.get(pm_qnames.NumericMetricDescriptor)
+        metric_handle = metrics[0].Handle
         coll = SingleValueCollector(cl_mdib, 'metrics_by_handle')
 
         with self.sdc_provider.mdib.metric_state_transaction() as tr:
@@ -166,9 +166,13 @@ class TestClientSomeDeviceGRPC(unittest.TestCase):
         self.sdc_consumer.subscribe_all()
         cl_mdib = GClientMdibContainer(self.sdc_consumer)
         cl_mdib.initMdib()
-        alert_cond_handle = '0xD3C00100'
-        alert_sig_handle = '0xD3C00100.loc.Vis'
-        alert_sys_handle = 'Asy.mds0'
+        conds = cl_mdib.descriptions.NODETYPE.get(pm_qnames.AlertConditionDescriptor)
+        sigs = cl_mdib.descriptions.NODETYPE.get(pm_qnames.AlertSignalDescriptor)
+        syss = cl_mdib.descriptions.NODETYPE.get(pm_qnames.AlertSystemDescriptor)
+
+        alert_cond_handle = conds[0].Handle
+        alert_sig_handle = sigs[0].Handle
+        alert_sys_handle = syss[0].Handle
 
         coll = SingleValueCollector(cl_mdib, 'alert_by_handle')
         with self.sdc_provider.mdib.alert_state_transaction() as tr:
@@ -192,7 +196,8 @@ class TestClientSomeDeviceGRPC(unittest.TestCase):
         self.sdc_consumer.subscribe_all()
         cl_mdib = GClientMdibContainer(self.sdc_consumer)
         cl_mdib.initMdib()
-        descriptor_handle = 'Asy.mds0'
+        asyss = cl_mdib.descriptions.NODETYPE.get(pm_qnames.AlertSystemDescriptor)
+        descriptor_handle = asyss[0].Handle
 
         coll = SingleValueCollector(cl_mdib, 'updated_descriptors_by_handle')
         with self.sdc_provider.mdib.descriptor_transaction() as tr:
@@ -208,7 +213,9 @@ class TestClientSomeDeviceGRPC(unittest.TestCase):
         self.sdc_consumer.subscribe_all()
         cl_mdib = GClientMdibContainer(self.sdc_consumer)
         cl_mdib.initMdib()
-        vmd_handle = "2.1.1"
+
+        vmds = cl_mdib.descriptions.NODETYPE.get(pm_qnames.VmdDescriptor)
+        vmd_handle = vmds[0].Handle
 
         coll = SingleValueCollector(cl_mdib, 'component_by_handle')
         with self.sdc_provider.mdib.component_state_transaction() as tr:
@@ -251,11 +258,14 @@ class TestClientSomeDeviceGRPC(unittest.TestCase):
                                                                               sco_descriptors[0].Handle,
                                                                               my_code,
                                                                               pm_types.SafetyClassification.INF)
-        operation_descriptor_container.OperationTarget = '0x34F001D5'
-        operation_descriptor_container.Type = pm_types.CodedValue('999998')
-        # setMetricStateOperationDescriptorContainer.updateNode()
+        metrics = self.sdc_provider.mdib.descriptions.NODETYPE.get(pm_qnames.NumericMetricDescriptor)
+        metric_state_handle = metrics[0].Handle
 
-        sco_handle = 'Sco.mds0'
+        operation_descriptor_container.OperationTarget = metric_state_handle
+        operation_descriptor_container.Type = pm_types.CodedValue('999998')
+
+        scos = self.sdc_provider.mdib.descriptions.NODETYPE.get(pm_qnames.ScoDescriptor)
+        sco_handle = scos[0].Handle
         product = self.sdc_provider.product_lookup[sco_handle]
         sco = self.sdc_provider._sco_operations_registries[sco_handle]
 
@@ -272,7 +282,7 @@ class TestClientSomeDeviceGRPC(unittest.TestCase):
         consumer_mdib.initMdib()
 
         operation_handle = operation_descriptor_container.Handle
-        proposed_metric_state = consumer_mdib.xtra.mk_proposed_state('0x34F001D5')
+        proposed_metric_state = consumer_mdib.xtra.mk_proposed_state(metric_state_handle)
 
         self.assertIsNone(proposed_metric_state.LifeTimePeriod) # just to be sure that we know the correct intitial value
         before_stateversion = proposed_metric_state.StateVersion
@@ -285,7 +295,7 @@ class TestClientSomeDeviceGRPC(unittest.TestCase):
         self.assertEqual(state, msg_types.InvocationState.FINISHED)
         self.assertIsNone(result.InvocationInfo.InvocationError)
         coll.result(timeout=NOTIFICATION_TIMEOUT)
-        updated_state = consumer_mdib.states.descriptor_handle.get_one('0x34F001D5')
+        updated_state = consumer_mdib.states.descriptor_handle.get_one(metric_state_handle)
         self.assertEqual(updated_state.StateVersion, before_stateversion +1)
         self.assertAlmostEqual(updated_state.LifeTimePeriod, new_life_time_period)
 
@@ -295,20 +305,21 @@ class TestClientSomeDeviceGRPC(unittest.TestCase):
         cl_mdib = GClientMdibContainer(self.sdc_consumer)
         cl_mdib.initMdib()
 
-        op_handle = 'SVO.40.CL.mds0'
+        ops = cl_mdib.descriptions.NODETYPE.get(pm_qnames.SetStringOperationDescriptor)
+        op_handle = ops[0].Handle
         op_descr = cl_mdib.descriptions.handle.get_one(op_handle)
         op_target_handle = op_descr.OperationTarget
         set_service = self.sdc_consumer.client('Set')
         target_state = cl_mdib.states.descriptor_handle.get_one(op_target_handle)
         before_stateversion = target_state.StateVersion
-        coll = SingleValueCollector(cl_mdib, 'component_by_handle')
+        coll = SingleValueCollector(cl_mdib, 'metrics_by_handle')
         future = set_service.set_string(op_handle, 'MEZ')
         result = future.result(timeout=SET_TIMEOUT)
         state = result.InvocationInfo.InvocationState
         self.assertEqual(state, msg_types.InvocationState.FINISHED)
         self.assertIsNone(result.InvocationInfo.InvocationError)
         coll.result(timeout=NOTIFICATION_TIMEOUT)
-        updated_state = cl_mdib.states.descriptorHandle.get_one(op_target_handle)
+        updated_state = cl_mdib.states.descriptor_handle.get_one(op_target_handle)
         self.assertEqual(updated_state.StateVersion, before_stateversion +1)
 
     def test_set_value(self):
@@ -326,10 +337,14 @@ class TestClientSomeDeviceGRPC(unittest.TestCase):
                                                                               scoDescriptors[0].Handle,
                                                                               myCode,
                                                                               pm_types.SafetyClassification.INF)
-        operation_descriptor_container.OperationTarget = '0x34F001D5'
+        metrics = self.sdc_provider.mdib.descriptions.NODETYPE.get(pm_qnames.NumericMetricDescriptor)
+        metric_state_handle = metrics[0].Handle
+        operation_descriptor_container.OperationTarget = metric_state_handle
+
         operation_descriptor_container.Type = pm_types.CodedValue('999998')
         self.sdc_provider.mdib.descriptions.add_object(operation_descriptor_container)
-        sco_handle = 'Sco.mds0'
+        scos = self.sdc_provider.mdib.descriptions.NODETYPE.get(pm_qnames.ScoDescriptor)
+        sco_handle = scos[0].Handle
         product = self.sdc_provider.product_lookup[sco_handle]
         sco = self.sdc_provider._sco_operations_registries[sco_handle]
 
@@ -356,7 +371,8 @@ class TestClientSomeDeviceGRPC(unittest.TestCase):
         cl_mdib = GClientMdibContainer(self.sdc_consumer)
         cl_mdib.initMdib()
 
-        op_handle = 'SVO.37.3569'
+        ops = cl_mdib.descriptions.NODETYPE.get(pm_qnames.ActivateOperationDescriptor)
+        op_handle = ops[0].Handle
         setService = self.sdc_consumer.client('Set')
         future = setService.activate(op_handle, ['42'])
         result = future.result(timeout=SET_TIMEOUT)
@@ -377,7 +393,9 @@ class TestClientSomeDeviceGRPC(unittest.TestCase):
         consumer_mdib = GClientMdibContainer(self.sdc_consumer)
         consumer_mdib.initMdib()
 
-        op_handle = 'SVO.mds0.op_test_comp'
+        ops = consumer_mdib.descriptions.NODETYPE.get(pm_qnames.SetComponentStateOperationDescriptor)
+        op_handle = ops[0].Handle
+
         op_descr = consumer_mdib.descriptions.handle.get_one(op_handle)
         op_target_handle = op_descr.OperationTarget
         setService = self.sdc_consumer.client('Set')

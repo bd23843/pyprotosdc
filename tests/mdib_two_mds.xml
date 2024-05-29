@@ -18,7 +18,6 @@ MdibVersion="5795" SequenceId="urn:uuid:4ed313b2-f925-418a-8476-6f3b4d06ee3e" In
 					<AlertSignal ConditionSignaled="ac0.mds0" Manifestation="Aud" Latching="false" Handle="as0.mds0_rem" DescriptorVersion="0" SafetyClassification="MedA" SignalDelegationSupported="true"/>
 				</AlertSystem>
 				<Sco Handle="sco.mds0" DescriptorVersion="0">
-
 					<Operation xsi:type="SetAlertStateOperationDescriptor" OperationTarget="as0.mds0_rem" MaxTimeToFinish="PT1S" InvocationEffectiveTimeout="PT3S" Retriggerable="true" Handle="as0.mds0_rem_dele" DescriptorVersion="0">
 						<ns2:Extension/>
 						<Type Code="1234567">
@@ -283,6 +282,41 @@ MdibVersion="5795" SequenceId="urn:uuid:4ed313b2-f925-418a-8476-6f3b4d06ee3e" In
 							<AllowedValue>
 								<Value>DayDark</Value>
 							</AllowedValue>
+						</Metric>
+					</Channel>
+				</Vmd>
+			</Mds>
+			<Mds Handle="mds_1">
+				<Type Code="67108866">
+					<ConceptDescription Lang="en-US">SDPi Test MDS used for description modification reports. This MDS periodically inserts and deletes a VMD including Channels including Metrics.</ConceptDescription>
+				</Type>
+				<Vmd Handle="vmd_0.mds_1">
+					<Type Code="67108868">
+						<ConceptDescription>SDPi Test VMD that contains a metric and an alarm for which units and cause-remedy information is periodically updated (description updates)</ConceptDescription>
+					</Type>
+					<AlertSystem Handle="alert_system.vmd_0.mds_1">
+						<AlertCondition Kind="Oth" Priority="None" Handle="alert_condition_0.vmd_0.mds_1">
+							<Type Code="67108885">
+								<ConceptDescription Lang="en-US">An alert condition that periodically changes its cause-remedy information at least every 5 seconds</ConceptDescription>
+							</Type>
+							<Source>numeric_metric_0.channel_0.vmd_0.mds_1</Source>
+							<CauseInfo>
+								<RemedyInfo>
+									<Description Lang="en-US">Remedy Info</Description>
+								</RemedyInfo>
+								<Description Lang="en-US">Cause Info</Description>
+							</CauseInfo>
+						</AlertCondition>
+					</AlertSystem>
+					<Channel Handle="channel_0.vmd_0.mds_1">
+						<Type Code="67108873">
+							<ConceptDescription Lang="en-US">Channel that contains a metric which is periodically changing its unit of measure</ConceptDescription>
+						</Type>
+						<Metric xsi:type="NumericMetricDescriptor" Resolution="1" MetricCategory="Set" MetricAvailability="Intr" Handle="numeric_metric_0.channel_0.vmd_0.mds_1">
+							<Type Code="157784" SymbolicCodeName="MDC_FLOW_FLUID_PUMP">
+								<ConceptDescription Lang="en-US">Flow Rate: Numeric measurement that periodically changes the unit of measure at least every 5 seconds</ConceptDescription>
+							</Type>
+							<Unit Code="265266" SymbolicCodeName="MDC_DIM_MILLI_L_PER_HR"/>
 						</Metric>
 					</Channel>
 				</Vmd>

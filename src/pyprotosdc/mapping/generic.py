@@ -79,6 +79,7 @@ from sdc11073.xml_types.xml_structure import (_AttributeBase,
                                               SymbolicCodeNameAttributeProperty,
                                               ExtensionAttributeProperty,
                                               TimestampAttributeProperty,
+                                              CurrentTimestampAttributeProperty,
                                               IntegerAttributeProperty,
                                               UnsignedIntAttributeProperty,
                                               DurationAttributeProperty,
@@ -379,6 +380,8 @@ def map_generic_to_p(pm_src: PropertyBasedPMType,
                     setattr(p_dest, p_name, value)
             elif isinstance(cp_type, TimestampAttributeProperty):
                 p_dest_current.unsigned_long = int(cp_type._converter.to_xml(value))
+            elif isinstance(cp_type, CurrentTimestampAttributeProperty):
+                p_dest_current.unsigned_long = int(cp_type._converter.to_xml(value))
             elif isinstance(cp_type, OperationRefListAttributeProperty):
                 pm_list = getattr(pm_src, pm_prop_name)
                 if pm_list is not None:
@@ -640,7 +643,7 @@ def map_generic_from_p(p: GeneratedProtocolMessageType,
                 elif isinstance(dest_type, DecimalAttributeProperty):
                     value = decimal_from_p(p_src)
                     setattr(pm_dest, name, value)
-                elif isinstance(dest_type, TimestampAttributeProperty):
+                elif isinstance(dest_type, (TimestampAttributeProperty, CurrentTimestampAttributeProperty)):
                     value = p_src.unsigned_long
                     setattr(pm_dest, name, value / 1000)
                 elif isinstance(dest_type, (HandleAttributeProperty,

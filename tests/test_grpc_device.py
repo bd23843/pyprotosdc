@@ -1,3 +1,4 @@
+import traceback
 import unittest
 import logging
 import copy
@@ -35,14 +36,15 @@ def diff(a: pm_types.PropertyBasedPMType, b:pm_types.PropertyBasedPMType) ->dict
 class Test_SomeDevice_GRPC(unittest.TestCase):
     def setUp(self) -> None:
         self.wsd = None
-        self.sdc_device = SomeDevice.fromMdibFile(self.wsd, None, '70041_MDIB_Final.xml', log_prefix='<Final> ')
+        self.sdc_device = SomeDevice.fromMdibFile(self.wsd, None, 'mdib_tns.xml', log_prefix='<Final> ')
         self.sdc_device._mdib.mdibVersion = 42 # start with some non-default value
         self.sdc_device.start_all()
 
-        # time.sleep(1)
-
     def tearDown(self) -> None:
-        self.sdc_device.stop_all()
+        try:
+            self.sdc_device.stop_all()
+        except:
+            print(traceback.format_exc())
 
     def _missing_descriptors(self, device_mdib, client_mdib):
         dev_handles = device_mdib.descriptions.handle.keys()

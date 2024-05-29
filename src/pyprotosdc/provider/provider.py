@@ -116,7 +116,8 @@ class GSdcDevice(object):
             self._rtSampleSendThread.join()
             self._rtSampleSendThread = None
         self._subscriptions_manager.stop()
-        self._server.stop(grace=2)
+        if self._server:
+            self._server.stop(grace=2)
 
     @property
     def subscriptions_manager(self) ->  subscriptionmgr.GSubscriptionsManager:

@@ -199,9 +199,11 @@ class SetService(sdc_services_pb2_grpc.SetServiceServicer):
                   request: sdc_messages_pb2.SetStringRequest,
                   context):
         value = request.payload.requested_string_value
+        pm_argument = msg_types.SetString()
+        pm_argument.RequestedStringValue = value
         pm_invocation_state = self._provider.handle_operation_request(operation,
                                                                       request,
-                                                                      value,
+                                                                      pm_argument,
                                                                       transaction_id)
         invocation_info = response.payload.abstract_set_response.invocation_info
         enum_attr_to_p(pm_invocation_state.value, invocation_info.invocation_state)
