@@ -76,7 +76,6 @@ NOTIFICATION_TIMEOUT = 2
 class TestClientSomeDeviceGRPC(unittest.TestCase):
     def setUp(self) -> None:
         basic_logging_setup()
-        # self._log_handler = _start_logger()
         self.wsd = GDiscovery()
         self.wsd.start()
         self.sdc_provider = SomeDevice.fromMdibFile(self.wsd, None, 'mdib_tns.xml', log_prefix='<Final> ')

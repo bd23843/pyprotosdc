@@ -1,10 +1,8 @@
 import traceback
 import unittest
 import logging
-import copy
 from tests.test_grpc_client_device import SomeDevice
 from org.somda.protosdc.proto.model import sdc_messages_pb2
-from org.somda.protosdc.proto.model.biceps.activate_pb2 import ActivateMsg
 from org.somda.protosdc.proto.model.biceps.handleref_pb2 import HandleRefMsg
 
 from pyprotosdc.msgreader import MessageReader
@@ -14,6 +12,7 @@ from sdc11073.mdib.mdibbase import MdibBase
 from sdc11073.definitions_sdc import SdcV1Definitions
 from sdc11073 import loghelper
 from sdc11073.xml_types import pm_types
+from sdc11073.loghelper import basic_logging_setup
 
 
 def diff(a: pm_types.PropertyBasedPMType, b:pm_types.PropertyBasedPMType) ->dict:
@@ -35,6 +34,7 @@ def diff(a: pm_types.PropertyBasedPMType, b:pm_types.PropertyBasedPMType) ->dict
 
 class Test_SomeDevice_GRPC(unittest.TestCase):
     def setUp(self) -> None:
+        basic_logging_setup()
         self.wsd = None
         self.sdc_device = SomeDevice.fromMdibFile(self.wsd, None, 'mdib_tns.xml', log_prefix='<Final> ')
         self.sdc_device._mdib.mdibVersion = 42 # start with some non-default value

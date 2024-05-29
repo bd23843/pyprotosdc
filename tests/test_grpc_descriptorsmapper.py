@@ -1,41 +1,21 @@
 import unittest
-import logging
 from decimal import Decimal
 from sdc11073.xml_types import pm_types as pmtypes
-# from sdc11073.namespaces import nsmap, domTag
 from sdc11073.namespaces import default_ns_helper as nsh
 
 from sdc11073.mdib import descriptorcontainers as dc
+from sdc11073.loghelper import basic_logging_setup
 from pyprotosdc.mapping import descriptorsmapper as dm
-
-def _start_logger():
-    logger = logging.getLogger('sdc.grpc')
-    logger.setLevel(logging.DEBUG)
-    ch = logging.StreamHandler()
-    # create formatter
-    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-    # add formatter to ch
-    ch.setFormatter(formatter)
-    # add ch to logger
-    logger.addHandler(ch)
-    return ch
-
-def _stop_logger(handler):
-    logger = logging.getLogger('sdc.grpc.map')
-    logger.setLevel(logging.WARNING)
-    logger.removeHandler(handler)
-
 
 class TestDescriptorsMapper(unittest.TestCase):
     def setUp(self) -> None:
-        self._log_handler = _start_logger()
+        basic_logging_setup()
 
     def tearDown(self) -> None:
-        _stop_logger(self._log_handler)
+        pass
 
     def check_convert(self, obj):
         obj_p = dm.generic_descriptor_to_p(obj, None)
-        print('\n################################# generic_from_p##################')
         obj2 = dm.generic_descriptor_from_p(obj_p, obj.parent_handle)
         self.assertEqual(obj.__class__, obj2.__class__)
         self.assertIsNone(obj.diff(obj2))

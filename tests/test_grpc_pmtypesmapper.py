@@ -24,37 +24,18 @@ def diff(a: pm_types.PropertyBasedPMType, b:pm_types.PropertyBasedPMType) ->dict
             ret[name] = ex
     return ret
 
-def _start_logger():
-    logger = logging.getLogger('sdc.grpc.map')
-    logger.setLevel(logging.DEBUG)
-    ch = logging.StreamHandler()
-    # create formatter
-    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-    # add formatter to ch
-    ch.setFormatter(formatter)
-    # add ch to logger
-    logger.addHandler(ch)
-    return ch
-
-def _stop_logger(handler):
-    logger = logging.getLogger('sdc.grpc')
-    logger.setLevel(logging.WARNING)
-    logger.removeHandler(handler)
 
 
 class TestPmtypesMapper(unittest.TestCase):
     def setUp(self) -> None:
         basic_logging_setup('sdc')
         logging.getLogger('sdc.grpc.map').setLevel(logging.DEBUG)
-        # self._log_handler = _start_logger()
 
     def tearDown(self) -> None:
         pass
-        # _stop_logger(self._log_handler)
 
     def check_convert(self, obj):
         obj_p = generic.generic_to_p(obj, None)
-        print('\n################################# generic_from_p##################')
         obj2 = generic.generic_from_p(obj_p)
         delta = diff(obj, obj2)
         if delta:
