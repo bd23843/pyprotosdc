@@ -5,6 +5,7 @@ from concurrent import futures
 import traceback
 import threading
 import time
+import uuid
 from urllib.parse import quote_plus
 import grpc
 
@@ -22,7 +23,6 @@ from .archiveservice import ArchiveService
 from sdc11073.intervaltimer import IntervalTimer
 from sdc11073.exceptions import ApiUsageError
 from .sco import ScoOperationsRegistry
-from sdc11073 import namespaces
 from sdc11073.xml_types import pm_types, pm_qnames
 from sdc11073.location import SdcLocation
 from sdc11073 import loghelper
@@ -37,22 +37,25 @@ if TYPE_CHECKING:
     from sdc11073.provider.operations import OperationDefinitionBase
     from sdc11073.mdib.providermdib import ProviderMdib
     from sdc11073.mdib.transactionsprotocol import TransactionResultProtocol
+    from sdc11073.xml_types.dpws_types import ThisDeviceType, ThisModelType
+    from sdc11073.certloader import SSLContextContainer
+    from pyprotosdc.discovery.discoveryimpl import GDiscovery
 
 
-class GSdcDevice(object):
-    def __init__(self, ws_discovery, my_uuid, model, device, mdib: ProviderMdib, validate=True, roleProvider=None, sslContext=None,
-                 logLevel=None, max_subscription_duration=7200, log_prefix='',
-                 chunked_messages=False): #pylint:disable=too-many-arguments
-        # ssl protocol handling itself is delegated to a handler.
-        # Specific protocol versions or behaviours are implemented there.
-        # if handler_cls is None:
-        #     handler_cls = SdcHandler_Full
-        # self._handler = handler_cls(my_uuid, ws_discovery, model, device, deviceMdibContainer, validate,
-        #                         roleProvider, sslContext, logLevel, max_subscription_duration,
-        #                         log_prefix=log_prefix, chunked_messages=chunked_messages)
-        self._wsdiscovery = ws_discovery
-        #self._logger = self._handler._logger
-        self._log_prefix = ''
+class GSdcProvider(object):
+    def __init__(self,
+                 g_discovery: GDiscovery,
+                 this_model: ThisModelType,
+                 this_device: ThisDeviceType,
+                 mdib: ProviderMdib,
+                 epr: str | None = None,
+                 ssl_context_container: SSLContextContainer | None = None,
+                 max_subscription_duration: int = 15,
+                 socket_timeout: int | float | None = None,
+                 log_prefix: str = '' ): #pylint:disable=too-many-arguments
+        """Construct a GSdcProvider."""
+        self._g_discovery = g_discovery
+        self._log_prefix = log_prefix
         self._sslContext=None
         self._mdib = mdib
         self._subscriptions_manager =  subscriptionmgr.GSubscriptionsManager(self._mdib.sdc_definitions,
@@ -88,8 +91,12 @@ class GSdcDevice(object):
         self.archive_service = ArchiveService(self._mdib)
 
         self._port_number = None  # ip listen port
-        self.epr = 'test_epr'
-        self._logger = loghelper.get_logger_adapter('sdc.device', log_prefix) # logging.getLogger('sdc.device')
+        if epr is None:
+            self.epr = uuid.uuid4().urn
+        else:
+            self.epr = epr
+
+        self._logger = loghelper.get_logger_adapter('sdc.grpc.provider', log_prefix) # logging.getLogger('sdc.device')
         self.msg_reader = MessageReader(self._logger)
         properties.bind(self._mdib, transaction=self._send_episodic_reports)
 
@@ -187,7 +194,8 @@ class GSdcDevice(object):
         sdc_services_pb2_grpc.add_MdibReportingServiceServicer_to_server(self.mdib_reporting_service, self._server)
         sdc_services_pb2_grpc.add_LocalizationServiceServicer_to_server(self.localization_service, self._server)
         sdc_services_pb2_grpc.add_ArchiveServiceServicer_to_server(self.archive_service, self._server)
-        self._port_number = self._server.add_insecure_port('[::]:50051')
+        addrs = self._g_discovery.get_active_addresses()
+        self._port_number = self._server.add_insecure_port(f'{addrs[0]}:0')
         self._server.start()
         print('server started')
         self._server.wait_for_termination()
@@ -289,11 +297,11 @@ class GSdcDevice(object):
         publish device on the network (sends HELLO message)
         :return:
         """
-        scopes = self._mkScopes()
-        xAddrs = self._getXAddrs()
-        self._wsdiscovery.publishService(self.epr, self._mdib.sdc_definitions.MedicalDeviceTypesFilter, scopes, xAddrs)
+        scopes = self._mk_scopes()
+        xAddrs = self._get_xaddrs()
+        self._g_discovery.publish_service(self.epr, scopes, xAddrs)
 
-    def _mkScopes(self) -> list[common_types_pb2.Uri]:
+    def _mk_scopes(self) -> list[str]:
         scopes = []
         locations = self._mdib.context_states.NODETYPE.get(pm_qnames.LocationContextState)
         if not locations:
@@ -303,10 +311,7 @@ class GSdcDevice(object):
             det = loc.LocationDetail
             dr_loc = SdcLocation(fac=det.Facility, poc=det.PoC, bed=det.Bed, bldng=det.Building,
                                  flr=det.Floor, rm=det.Room)
-            # scopes.append(wsdiscovery.Scope(dr_loc.scopeStringSdc))
-            sc = common_types_pb2.Uri()
-            sc.value = dr_loc.scope_string
-            scopes.append(sc)
+            scopes.append(dr_loc.scope_string)
 
         for nodetype, scheme in (
                 (pm_qnames.OperatorContextDescriptor, 'sdc.ctxt.opr'),
@@ -316,29 +321,26 @@ class GSdcDevice(object):
         ):
             descriptors = self._mdib.descriptions.NODETYPE.get(nodetype, [])
             for descriptor in descriptors:
-                states = self._mdib.contextStates.descriptorHandle.get(descriptor.Handle, [])
+                states = self._mdib.context_states.descriptor_handle.get(descriptor.Handle, [])
                 assoc_st = [s for s in states if s.ContextAssociation == pm_types.ContextAssociation.ASSOCIATED]
                 for st in assoc_st:
                     for ident in st.Identification:
-                        sc = common_types_pb2.Uri()
-                        sc.value = f'{scheme}:/{quote_plus(ident.Root)}/{quote_plus(ident.Extension)}'
+                        scopes.append(f'{scheme}:/{quote_plus(ident.Root)}/{quote_plus(ident.Extension)}')
 
 
-        scopes.extend(self._getDeviceComponentBasedScopes())
-        sc = common_types_pb2.Uri()
-        sc.value = 'sdc.mds.pkp:1.2.840.10004.20701.1.1'   # key purpose Service provider
-        scopes.append(sc)
+        scopes.extend(self._get_device_component_based_scopes())
+        scopes.append('sdc.mds.pkp:1.2.840.10004.20701.1.1')   # key purpose Service provider
         return scopes
 
-    def _getDeviceComponentBasedScopes(self) -> list[common_types_pb2.Uri]:
-        '''
+    def _get_device_component_based_scopes(self) -> list[str]:
+        """
         SDC: For every instance derived from pm:AbstractComplexDeviceComponentDescriptor in the MDIB an
         SDC SERVICE PROVIDER SHOULD include a URIencoded pm:AbstractComplexDeviceComponentDescriptor/pm:Type
         as dpws:Scope of the MDPWS discovery messages. The URI encoding conforms to the given Extended Backus-Naur Form.
         E.G.  sdc.cdc.type:///69650, sdc.cdc.type:/urn:oid:1.3.6.1.4.1.3592.2.1.1.0//DN_VMD
         After discussion with David: use only MDSDescriptor, VmdDescriptor makes no sense.
         :return: a set of scopes
-        '''
+        """
         scope_strings = set()  # use a set to avoid duplicates
         for t in (pm_qnames.MdsDescriptor,):
             descriptors = self._mdib.descriptions.NODETYPE.get(t)
@@ -346,17 +348,13 @@ class GSdcDevice(object):
                 if d.Type is not None:
                     cs = '' if d.Type.CodingSystem == pm_types.DEFAULT_CODING_SYSTEM else d.Type.CodingSystem
                     csv = d.Type.CodingSystemVersion or ''
-                    # sc = wsdiscovery.Scope('sdc.cdc.type:/{}/{}/{}'.format(cs, csv, d.Type.Code))
-                    sc = common_types_pb2.Uri()
-                    sc.value = 'sdc.cdc.type:/{}/{}/{}'.format(cs, csv, d.Type.Code)
+                    # sc = common_types_pb2.Uri()
+                    # sc.value = 'sdc.cdc.type:/{}/{}/{}'.format(cs, csv, d.Type.Code)
                     scope_strings.add('sdc.cdc.type:/{}/{}/{}'.format(cs, csv, d.Type.Code))
-        scopes = []
-        for s in scope_strings:
-            sc = common_types_pb2.Uri()
-            sc.value = s
-        return scopes
+        return scope_strings
 
-    def _getXAddrs(self):
+    def _get_xaddrs(self):
+        srv = self._server
         return [f'localhost:{self._port_number}'] # for now...
         #xaddrs = self._server
 

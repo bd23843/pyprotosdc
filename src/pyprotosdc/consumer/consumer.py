@@ -3,19 +3,17 @@ import logging
 import grpc
 from org.somda.protosdc.proto.model import sdc_services_pb2_grpc, sdc_messages_pb2
 from org.somda.protosdc.proto.model.biceps import setvalue_pb2, abstractset_pb2
+from sdc11073 import observableproperties as properties
+from sdc11073.definitions_sdc import SdcV1Definitions
+
 from pyprotosdc.consumer.serviceclients.getservice import GetService_Wrapper
 from pyprotosdc.consumer.serviceclients.setservice import SetService_Wrapper
 from .mdibreportingservice import MdibReportingService_Wrapper, EpisodicReportData
-from sdc11073.definitions_sdc import SdcV1Definitions
-from sdc11073.xml_types import pm_types
-from sdc11073.xml_types import msg_types
+from .operations import GOperationsManager
 from ..msgreader import MessageReader
-from sdc11073 import observableproperties as properties
-from .operations import GOperationsManager, OperationResult
-from ..mapping.basic_mappers import enum_from_p
 
-class GSdcClient:
 
+class GSdcConsumer:
     # the following observables can be used to observe the incoming notifications by message type.
     # They contain only the body node of the notification, not the envelope
     waveFormReport = properties.ObservableProperty()
@@ -53,13 +51,11 @@ class GSdcClient:
             if hasattr(client, 'set_operations_manager'):
                 client.set_operations_manager(self._operations_manager)
 
-
     def client(self, name):
         return self._clients[name]
 
     def subscribe_all(self):
         service = self.client('Event')
-#        self.all_subscribed = True
         service.EpisodicReport()  # starts a background thread to receive stream data
         service = self.client('Set')
         service.OperationInvokedReport()  # starts a background thread to receive stream data
@@ -85,23 +81,9 @@ class GSdcClient:
         else:
             raise ValueError(f'_on_episodic_report: dont know how to handle {episodic_report_data.action}')
 
-    # def _on_operation_invoked_report(self, episodic_report):
-    #     self._logger.info('_on_operation_invoked_report with %d report parts', len(episodic_report.operation_invoked.report_part))
-    #     for report_part in episodic_report.operation_invoked.report_part:
-    #         transaction_id = report_part.invocation_info.transaction_id.unsigned_int
-    #         invocation_state = enum_from_p(report_part.invocation_info, 'invocation_state', msg_types.InvocationState)
-    #         error = enum_from_p(report_part.invocation_info, 'invocation_error', msg_types.InvocationError)
-    #         errormessages = []
-    #         try:
-    #             print(f'_on_operation_invoked_report tr={transaction_id} state={invocation_state}')
-    #             ret = self._operations_manager.on_operation_invoked_report(
-    #                 transaction_id, OperationResult(invocation_state, error, errormessages))
-    #         except:
-    #             import traceback
-    #             print(traceback.format_exc())
-    #         self.operationInvokedReport = (transaction_id, invocation_state)
     def _on_operation_invoked_report(self, episodic_report):
-        self._logger.info('_on_operation_invoked_report with %d report parts', len(episodic_report.operation_invoked.report_part))
+        self._logger.info('_on_operation_invoked_report with %d report parts',
+                          len(episodic_report.operation_invoked.report_part))
         self._operations_manager.on_operation_invoked_report(episodic_report.operation_invoked)
         self.operationInvokedReport = episodic_report.operation_invoked
 

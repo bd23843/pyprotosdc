@@ -1,19 +1,19 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING
-import time
-from sdc11073.mdib import consumermdib
-from sdc11073 import observableproperties as properties
-from sdc11073.xml_types.actions import Actions
-from sdc11073.xml_types import msg_types
 
-from org.somda.protosdc.proto.model import sdc_messages_pb2
-from pyprotosdc.mapping.mapping_helpers import get_p_attr
-from pyprotosdc.mapping.msgtypes_mappers import get_mdib_version_group
+import time
+from typing import TYPE_CHECKING
+
+from sdc11073 import observableproperties as properties
+from sdc11073.mdib import consumermdib
+from sdc11073.xml_types import msg_types
+from sdc11073.xml_types.actions import Actions
+
 from pyprotosdc.mapping.basic_mappers import enum_attr_from_p
+from pyprotosdc.mapping.mapping_helpers import get_p_attr
 
 if TYPE_CHECKING:
     from pyprotosdc.consumer.mdibreportingservice import EpisodicReportData
-
+    from pyprotosdc.consumer.consumer import GSdcConsumer
 
 LOG_WF_AGE_INTERVAL = 30  # how often a log message is written with mean and standard-deviation of waveforms age
 AGE_CALC_SAMPLES_COUNT = 100  # amount of data for wf mean age and standard-deviation calculation
@@ -26,7 +26,13 @@ A_BACK_IN_RANGE = 3
 
 class GClientMdibContainer(consumermdib.ConsumerMdib):
 
-    def initMdib(self):
+    def __init__(self,
+                 sdc_consumer: GSdcConsumer,
+                 extras_cls: type | None = None,
+                 max_realtime_samples: int = 100):
+        super().__init__(sdc_consumer, extras_cls, max_realtime_samples)
+
+    def init_mdib(self):
         if self._is_initialized:
             raise RuntimeError('ClientMdibContainer is already initialized')
         # first start receiving notifications, then call getMdib.
@@ -35,19 +41,13 @@ class GClientMdibContainer(consumermdib.ConsumerMdib):
 
         cl_get_service = self._sdc_client.client('Get')
         self._logger.info('initializing mdib...')
-        # request = sdc_messages_pb2.GetMdibRequest()
         response = cl_get_service.get_mdib()
         self._logger.info('creating description containers...')
-        # descriptor_containers = self._msg_reader.readMdDescription(response.payload.mdib.md_description, self)
         with self.descriptions._lock:  # pylint: disable=protected-access
             self.descriptions.clear()
         self.add_description_containers(response.descriptors)
         self._logger.info('creating state containers...')
-        # self.clearStates()
-        # state_containers = self._msg_reader.readMdState(response.payload.mdib.md_state, self)
-        # state_containers = self._msg_reader.read_states(response.payload.mdib.md_state.state, self)
         self.add_state_containers(response.states)
-
 
         mdib_version_group = response.mdib_version_group
         if mdib_version_group.mdib_version is not None:
@@ -61,14 +61,6 @@ class GClientMdibContainer(consumermdib.ConsumerMdib):
         if mdib_version_group.instance_id != self.instance_id:
             self.instance_id = mdib_version_group.instance_id
         self._logger.info('setting initial instance id to {}', mdib_version_group.instance_id)  # noqa: PLE1205
-
-
-        # mdib_version = response.p_response.payload.mdib.a_mdib_version_group.a_mdib_version.value
-        # sequence_id = response.payload.mdib.a_mdib_version_group.a_sequence_id
-        # # instance_id = response.payload.mdib.a_mdib_version_group.a_instance_id.value
-        # self.mdibVersion = mdib_version
-        # self.sequenceId = sequence_id
-        # self._logger.info('setting sequence Id to {}', sequence_id)
 
         # retrieve context states only if there were none in mdibNode
         if len(self.context_states.objects) == 0:
@@ -111,67 +103,6 @@ class GClientMdibContainer(consumermdib.ConsumerMdib):
         except Exception as ex:
             raise
 
-
-    # def x_on_any_report(self, report: EpisodicReportData, is_buffered_report=False):
-    #     # if not is_buffered_report and self._buffer_data(report, self._on_any_report):
-    #     #     print('_on_any_report: buffered')
-    #     #     return
-    #     print('_on_any_report: check version')
-    #     print('_on_any_report: process')
-    #     handler = None
-    #     mdib_version_group = None
-    #     actual_report = None
-    #     if report.HasField('waveform'):
-    #         actual_report = report.waveform
-    #         mdib_version_group_msg = get_p_attr(actual_report.abstract_report,
-    #                                             'MdibVersionGroup')
-    #         # mdib_version_group = actual_report.abstract_report.a_mdib_version_group
-    #         handler = self._on_waveform_report
-    #     elif report.HasField('metric'):
-    #         actual_report = report.metric
-    #         mdib_version_group_msg = get_p_attr(actual_report.abstract_metric_report.abstract_report,
-    #                                             'MdibVersionGroup')
-    #         # mdib_version_group = get_mdib_version_group(mdib_version_group_msg)
-    #         handler = self._on_episodic_metric_report
-    #     elif report.HasField('alert'):
-    #         actual_report = report.alert
-    #         mdib_version_group_msg = get_p_attr(actual_report.abstract_alert_report.abstract_report,
-    #                                             'MdibVersionGroup')
-    #         # mdib_version_group = actual_report.abstract_alert_report.abstract_report.a_mdib_version_group
-    #         handler = self._on_episodic_alert_report
-    #     elif report.HasField('component'):
-    #         actual_report = report.component
-    #         mdib_version_group_msg = get_p_attr(actual_report.abstract_component_report.abstract_report,
-    #                                             'MdibVersionGroup')
-    #         # mdib_version_group = actual_report.abstract_component_report.abstract_report.a_mdib_version_group
-    #         handler = self._on_episodic_component_report
-    #     elif report.HasField('context'):
-    #         actual_report = report.context
-    #         mdib_version_group_msg = get_p_attr(actual_report.abstract_context_report.abstract_report,
-    #                                             'MdibVersionGroup')
-    #         # mdib_version_group = actual_report.abstract_context_report.abstract_report.a_mdib_version_group
-    #         handler = self._on_episodic_context_report
-    #     elif report.HasField('description'):
-    #         actual_report = report.description
-    #         mdib_version_group_msg = get_p_attr(actual_report.abstract_report,
-    #                                             'MdibVersionGroup')
-    #         # mdib_version_group = actual_report.abstract_report.a_mdib_version_group
-    #         handler = self._on_description_modification_report
-    #     elif report.HasField('operational_state'):
-    #         actual_report = report.operational_state
-    #         mdib_version_group_msg = get_p_attr(actual_report.abstract_report,
-    #                                             'MdibVersionGroup')
-    #         # mdib_version_group = actual_report.abstract_report.a_mdib_version_group
-    #     if handler:
-    #         new_mdib_version = 0
-    #         mdib_version_group = get_mdib_version_group(mdib_version_group_msg)
-    #         new_mdib_version = mdib_version_group.mdib_version
-    #         if not self._can_accept_mdib_version('_on_any_report', new_mdib_version):
-    #             self._logger.warn('ignoring %s, mdib version too old (got %d, expect %d)',
-    #                               actual_report.__class__.__name__, new_mdib_version, self.mdibVersion+1)
-    #             return
-    #         return handler(actual_report, new_mdib_version, mdib_version_group.sequence_id, is_buffered_report)
-
     def _on_episodic_metric_report(self, report_data: EpisodicReportData, is_buffered_report):
         print('_on_episodic_metric_report: process')
         now = time.time()
@@ -195,7 +126,8 @@ class GClientMdibContainer(consumermdib.ConsumerMdib):
                             sc.descriptorHandle, sc.DescriptorVersion, sc.descriptor_container.DescriptorVersion)
                         sc.descriptor_container = None
                     try:
-                        old_state_container = self.states.descriptor_handle.get_one(sc.DescriptorHandle, allow_none=True)
+                        old_state_container = self.states.descriptor_handle.get_one(sc.DescriptorHandle,
+                                                                                    allow_none=True)
                     except RuntimeError as ex:
                         self._logger.error('_onEpisodicMetricReport, get_one on states: {}', ex)
                         continue
@@ -203,7 +135,7 @@ class GClientMdibContainer(consumermdib.ConsumerMdib):
                     metrics_by_handle[desc_h] = sc  # metric
                     if old_state_container is not None:
                         if self._has_new_state_usable_state_version(old_state_container, sc, 'EpisodicMetricReport',
-                                                               is_buffered_report):
+                                                                    is_buffered_report):
                             old_state_container.update_from_other_container(sc)
                             self.states.update_object(old_state_container)
                     else:
@@ -259,15 +191,14 @@ class GClientMdibContainer(consumermdib.ConsumerMdib):
                             sc.descriptorHandle, sc.DescriptorVersion, sc.descriptor_container.DescriptorVersion)
                         sc.descriptor_container = None
                     try:
-                        old_state_container = self.states.descriptor_handle.get_one(sc.DescriptorHandle, allow_none=True)
+                        old_state_container = self.states.descriptor_handle.get_one(sc.DescriptorHandle,
+                                                                                    allow_none=True)
                     except RuntimeError as ex:
                         self._logger.error('_onEpisodicAlertReport, get_one on states: {}', ex)
                         continue
-                    # desc_h = sc.descriptorHandle
-
                     if old_state_container is not None:
                         if self._has_new_state_usable_state_version(old_state_container, sc, 'EpisodicAlertReport',
-                                                               is_buffered_report):
+                                                                    is_buffered_report):
                             old_state_container.update_from_other_container(sc)
                             self.states.update_object(old_state_container)
                             alert_by_handle[old_state_container.DescriptorHandle] = old_state_container
@@ -302,7 +233,7 @@ class GClientMdibContainer(consumermdib.ConsumerMdib):
                         current_sc = new_sac
                     else:
                         if self._has_new_state_usable_state_version(old_state_container, new_sac,
-                                                               'WaveformReport', is_buffered_report):
+                                                                    'WaveformReport', is_buffered_report):
                             # update old state container from new one
                             old_state_container.update_from_other_container(new_sac)
                             self.states.update_object(old_state_container)
@@ -317,8 +248,8 @@ class GClientMdibContainer(consumermdib.ConsumerMdib):
                                 sample_period = descriptor_container.SamplePeriod or 0
                             except AttributeError:
                                 sample_period = 0  # default
-                        rt_buffer = clientmdib.ClientRtBuffer(sample_period=sample_period,
-                                                              max_samples=self._maxRealtimeSamples)
+                        rt_buffer = consumermdib.ConsumerRtBuffer(sample_period=sample_period,
+                                                                  max_samples=self._maxRealtimeSamples)
                         self.rt_buffers[d_handle] = rt_buffer
                     # last_sc = rt_buffer.last_sc
                     rt_sample_containers = rt_buffer.mkRtSampleContainers(new_sac)
@@ -357,8 +288,8 @@ class GClientMdibContainer(consumermdib.ConsumerMdib):
                 if now - self._last_wf_age_log >= LOG_WF_AGE_INTERVAL:
                     age_data = self.get_wf_age_stdev()
                     self._logger.info('waveform mean age={:.1f}ms., std-dev={:.2f}ms. min={:.1f}ms., max={}',
-                                      age_data.mean_age*1000., age_data.stdev*1000.,
-                                      age_data.min_age*1000., age_data.max_age*1000.)
+                                      age_data.mean_age * 1000., age_data.stdev * 1000.,
+                                      age_data.min_age * 1000., age_data.max_age * 1000.)
                     self._last_wf_age_log = now
         finally:
             self.waveform_by_handle = waveform_by_handle
@@ -379,7 +310,7 @@ class GClientMdibContainer(consumermdib.ConsumerMdib):
                     desc_h = sc.DescriptorHandle
                     try:
                         old_state_container = self.states.descriptor_handle.get_one(desc_h, allow_none=True)
-                    except RuntimeError  as ex:
+                    except RuntimeError as ex:
                         self._logger.error('_on_episodic_component_report, get_one on states: {}', ex)
                         continue
 
@@ -391,7 +322,7 @@ class GClientMdibContainer(consumermdib.ConsumerMdib):
                         component_by_handle[sc.descriptorHandle] = sc
                     else:
                         if self._has_new_state_usable_state_version(old_state_container, sc, 'EpisodicComponentReport',
-                                                               is_buffered_report):
+                                                                    is_buffered_report):
                             self._logger.info(
                                 '_onEpisodicComponentReport: updated component state, handle="{}" DescriptorVersion={}',
                                 desc_h, sc.DescriptorVersion)
@@ -416,7 +347,7 @@ class GClientMdibContainer(consumermdib.ConsumerMdib):
                 for sc in state_containers:
                     try:
                         old_state_container = self.context_states.handle.get_one(sc.Handle, allow_none=True)
-                    except RuntimeError  as ex:
+                    except RuntimeError as ex:
                         self._logger.error('_onEpisodicContextReport, get_one on contextStates: {}', ex)
                         continue
 
@@ -427,7 +358,8 @@ class GClientMdibContainer(consumermdib.ConsumerMdib):
                             sc.Handle, sc.DescriptorHandle, sc.ContextAssociation, sc.Validator)
                         context_by_handle[sc.Handle] = sc
                     else:
-                        if self._has_new_state_usable_state_version(old_state_container, sc, 'EpisodicContextReport', is_buffered_report):
+                        if self._has_new_state_usable_state_version(old_state_container, sc, 'EpisodicContextReport',
+                                                                    is_buffered_report):
                             self._logger.info(
                                 '_on_episodic_context_report: updated context state handle = {} Descriptor Handle={} Assoc={}, Validators={}',
                                 sc.Handle, sc.DescriptorHandle, sc.ContextAssociation, sc.Validator)
@@ -451,12 +383,13 @@ class GClientMdibContainer(consumermdib.ConsumerMdib):
 
             for report_part in report.description.report_part:
                 descriptor_containers = report_data.msg_reader.read_descriptors(report_part.p_descriptor,
-                                                                                get_p_attr(report_part, 'ParentDescriptor'),
+                                                                                get_p_attr(report_part,
+                                                                                           'ParentDescriptor'),
                                                                                 self)
-                                                                          # report_part.a_parent_descriptor, self)
+                # report_part.a_parent_descriptor, self)
                 modification_type = enum_attr_from_p(report_part,
-                                                'ModificationType',
-                                                msg_types.DescriptionModificationType)
+                                                     'ModificationType',
+                                                     msg_types.DescriptionModificationType)
                 if modification_type == msg_types.DescriptionModificationType.CREATE:  # CRT
                     for dc in descriptor_containers:
                         self.descriptions.addObject(dc)
@@ -489,7 +422,8 @@ class GClientMdibContainer(consumermdib.ConsumerMdib):
                             old_state_container = multikey.handle.get_one(sc.Handle, allow_none=True)
                         else:
                             multikey = self.states
-                            old_state_container = multikey.descriptor_handle.get_one(sc.DescriptorHandle, allow_none=True)
+                            old_state_container = multikey.descriptor_handle.get_one(sc.DescriptorHandle,
+                                                                                     allow_none=True)
                         if old_state_container is not None:
                             old_state_container.update_from_other_container(sc)
                             multikey.update_object(old_state_container)
@@ -497,7 +431,8 @@ class GClientMdibContainer(consumermdib.ConsumerMdib):
                     for dc in descriptor_containers:
                         self._logger.debug('_onDescriptionModificationReport: remove descriptor "{}" (parent="{}")',
                                            dc.handle, dc.parentHandle)
-                        self.rm_descriptor_by_handle(dc.handle)  # handling of self.deletedDescriptorByHandle inside called method
+                        self.rm_descriptor_by_handle(
+                            dc.handle)  # handling of self.deletedDescriptorByHandle inside called method
                         deleted_descriptor_by_handle[dc.Handle] = dc
 
                 # write observables for every report part separately

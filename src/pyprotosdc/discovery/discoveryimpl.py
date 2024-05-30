@@ -1,530 +1,279 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING
-import threading
-import queue
-import socket
-import time
-import random
-import traceback
-from collections import deque
+
 import logging
-import select
+import platform
+import threading
+import time
+import uuid
+from enum import StrEnum
+from typing import TYPE_CHECKING, Callable
 
-from org.somda.protosdc.proto.model.discovery import discovery_messages_pb2, discovery_types_pb2, discovery_services_pb2
+from org.somda.protosdc.proto.model.discovery import discovery_messages_pb2, discovery_types_pb2
+from sdc11073 import network
+from sdc11073.exceptions import ApiUsageError
 
+from .filterimpl import filter_services  # , MULTICAST_PORT, MULTICAST_IPV4_ADDRESS
+from .networkingthread import NetworkingThreadPosix, NetworkingThreadWindows, MULTICAST_PORT, MULTICAST_IPV4_ADDRESS
+from .service import Service
 
 if TYPE_CHECKING:
-    from sdc11073.wsdiscovery.service import Service
-
-
-MULTICAST_PORT = 3702
-MULTICAST_IPV4_ADDRESS = "239.255.255.250"
-MULTICAST_OUT_TTL = 15  # Time To Live for multicast_out
-
-UNICAST_UDP_REPEAT = 2
-UNICAST_UDP_MIN_DELAY = 50
-UNICAST_UDP_MAX_DELAY = 250
-UNICAST_UDP_UPPER_DELAY = 500
-
-MULTICAST_UDP_REPEAT = 4
-MULTICAST_UDP_MIN_DELAY = 50
-MULTICAST_UDP_MAX_DELAY = 250
-MULTICAST_UDP_UPPER_DELAY = 500
-
-APP_MAX_DELAY = 500  # miliseconds
-BUFFER_SIZE = 0xffff
-
-
-def _generateInstanceId():
-    return str(random.randint(1, 0xFFFFFFFF))
-
-class Message:
-    MULTICAST = 'multicast'
-    UNICAST = 'unicast'
-
-    def __init__(self, env, addr, port, msgType, initialDelay=0):
-        """msgType shall be Message.MULTICAST or Message.UNICAST"""
-        self._env = env
-        self._addr = addr
-        self._port = port
-        self._msgType = msgType
-
-        if msgType == self.UNICAST:
-            udpRepeat, udpMinDelay, udpMaxDelay, udpUpperDelay = \
-                UNICAST_UDP_REPEAT, \
-                UNICAST_UDP_MIN_DELAY, \
-                UNICAST_UDP_MAX_DELAY, \
-                UNICAST_UDP_UPPER_DELAY
-        else:
-            udpRepeat, udpMinDelay, udpMaxDelay, udpUpperDelay = \
-                MULTICAST_UDP_REPEAT, \
-                MULTICAST_UDP_MIN_DELAY, \
-                MULTICAST_UDP_MAX_DELAY, \
-                MULTICAST_UDP_UPPER_DELAY
-
-        self._udpRepeat = udpRepeat
-        self._udpUpperDelay = udpUpperDelay
-        self._t = (udpMinDelay + ((udpMaxDelay - udpMinDelay) * random.random())) / 2
-        self._nextTime = int(time.time() * 1000) + initialDelay
-
-    def getEnv(self):
-        return self._env
-
-    def getAddr(self):
-        return self._addr
-
-    def getPort(self):
-        return self._port
-
-    def msgType(self):
-        return self._msgType
-
-    def isFinished(self):
-        return self._udpRepeat <= 0
-
-    def canSend(self):
-        ct = int(time.time() * 1000)
-        return self._nextTime < ct
-
-    def refresh(self):
-        self._t = self._t * 2
-        if self._t > self._udpUpperDelay:
-            self._t = self._udpUpperDelay
-        self._nextTime = int(time.time() * 1000) + self._t
-        self._udpRepeat = self._udpRepeat - 1
-
-
-class Service:
-    def __init__(self, types, scopes, xAddrs, epr, instanceId):
-        self._types = types
-        self._scopes = scopes
-        self._xAddrs = xAddrs
-        self._epr = epr
-        self._instanceId = instanceId
-        self._messageNumber = 0
-        self._metadataVersion = 1
-
-    def getTypes(self):
-        return self._types
-
-    def setTypes(self, types):
-        self._types = types
-
-    def getScopes(self):
-        return self._scopes
-
-    def setScopes(self, scopes):
-        self._scopes = scopes
-
-    def getXAddrs(self):
-        ret = []
-        ipAddrs = None
-        for xAddr in self._xAddrs:
-            if '{ip}' in xAddr:
-                if ipAddrs is None:
-                    ipAddrs = _getNetworkAddrs()
-                for ipAddr in ipAddrs:
-                    if ipAddr not in _IP_BLACKLIST:
-                        ret.append(xAddr.format(ip=ipAddr))
-            else:
-                ret.append(xAddr)
-        return ret
-
-    def setXAddrs(self, xAddrs):
-        self._xAddrs = xAddrs
-
-    def getEPR(self):
-        return self._epr
-
-    def setEPR(self, epr):
-        self._epr = epr
-
-    def getInstanceId(self):
-        return self._instanceId
-
-    def setInstanceId(self, instanceId):
-        self._instanceId = instanceId
-
-    def getMessageNumber(self):
-        return self._messageNumber
-
-    def setMessageNumber(self, messageNumber):
-        self._messageNumber = messageNumber
-
-    def getMetadataVersion(self):
-        return self._metadataVersion
-
-    def setMetadataVersion(self, metadataVersion):
-        self._metadataVersion = metadataVersion
-
-    def incrementMessageNumber(self):
-        self._messageNumber = self._messageNumber + 1
-
-    def isLocatedOn(self, *ipaddresses):
-        '''
-        @param ipaddresses: ip addresses, lists of strings or strings
-        '''
-        my_addresses = []
-        for i in ipaddresses:
-            if isinstance(i, str):
-                my_addresses.append(i)
-            else:
-                my_addresses.extend(i)
-        for addr in self.getXAddrs():
-            parsed = urllib.parse.urlsplit(addr)
-            ip_addr = parsed.netloc.split(':')[0]
-            if ip_addr in my_addresses:
-                return True
-        return False
-
-    def __repr__(self):
-        return 'Service epr={}, instanceId={} Xaddr={} scopes={} types={}'.format(self._epr, self._instanceId,
-                                                                          self._xAddrs,
-                                                                          ', '.join([str(x) for x in self._scopes]),
-                                                                          ', '.join([str(x) for x in self._types]))
-    def __str__(self):
-        return 'Service epr={}, instanceId={}\n   Xaddr={}\n   scopes={}\n   types={}'.format(self._epr, self._instanceId,
-                                                                          self._xAddrs,
-                                                                          ', '.join([str(x) for x in self._scopes]),
-                                                                          ', '.join([str(x) for x in self._types]))
-
-
-class _NetworkingThread(object):
-    def __init__(self, observer, logger):
-        self._recvThread = None
-        self._sendThread = None
-        self._quitRecvEvent = threading.Event()
-        self._quitSendEvent = threading.Event()
-        self._queue = queue.Queue(1000)
-
-        self._knownMessageIds = deque()
-        self._iidMap = {}
-        self._observer = observer
-        self._logger = logger
-
-        self._select_in = []
-
-    @staticmethod
-    def _createMulticastOutSocket(addr):
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.setblocking(0)
-        sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, MULTICAST_OUT_TTL)
-        if addr is None:
-            sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.INADDR_ANY)
-        else:
-            _addr = socket.inet_aton(addr)
-            sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, _addr)
-
-        return sock
-
-    @staticmethod
-    def _createMulticastInSocket():
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-
-        sock.bind(('', MULTICAST_PORT))
-
-        sock.setblocking(0)
-
-        return sock
-
-    def addUnicastMessage(self, env, addr, port, initialDelay=0):
-        msg = Message(env, addr, port, Message.UNICAST, initialDelay)
-        self._logger.debug('addUnicastMessage: adding message Id %s. delay=%.2f'.format(env.getMessageId(), initialDelay))
-        self._queue.put(msg)
-
-    def addMulticastMessage(self, env, addr, port, initialDelay=0):
-        msg = Message(env, addr, port, Message.MULTICAST, initialDelay)
-        #self._logger.debug('addMulticastMessage: adding message Id %s. delay=%.2f'.format(env.getMessageId(), initialDelay))
-        self._queue.put(msg)
-
-    def _run_send(self):
-        ''' run by thread'''
-        while not self._quitSendEvent.is_set():  # or self._queue:
-            if not self._queue.empty():
-                try:
-                    sz = self._queue.qsize()
-                    if sz > 800:
-                        self._logger.error('_queue size =%d', sz)
-                    elif sz > 500:
-                        self._logger.warn('_queue size =%d', sz)
-                    elif sz > 100:
-                        self._logger.info('_queue size =%d', sz)
-                    for dummy in range(self._queue.qsize()):
-                        msg = self._queue.get()
-                        if msg.canSend():
-                            self._sendMsg(msg)
-                            msg.refresh()
-                            if not msg.isFinished():
-                                self._queue.put(msg)
-                        else:
-                            self._queue.put(msg)
-                except:
-                    self._logger.error('_run_send:{}'.format(traceback.format_exc()))
-                time.sleep(0.02)
-            else:
-                time.sleep(0.2)
-
-    def _run_recv(self):
-        ''' run by thread'''
-        while not self._quitRecvEvent.is_set():  # or self._queue:
-            try:
-                self._recvMessages()
-            except:
-                if not self._quitRecvEvent.is_set():  # only log error if it does not happen during stop
-                    self._logger.error('_run_recv:%s', traceback.format_exc())
-
-    def start(self):
-        self._logger.debug('%s: starting ', self.__class__.__name__)
-        self._uniOutSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-
-        self._multiInSocket = self._createMulticastInSocket()
-        self._register(self._multiInSocket)
-
-        self._multiOutUniInSockets = {}  # FIXME synchronisation
-
-        self._recvThread = threading.Thread(target=self._run_recv, name='wsd.recvThread')
-        self._sendThread = threading.Thread(target=self._run_send, name='wsd.sendThread')
-        self._recvThread.daemon = True
-        self._sendThread.daemon = True
-        self._recvThread.start()
-        self._sendThread.start()
-
-    def schedule_stop(self):
-        """Schedule stopping the thread.
-        Use join() to wait, until thread really has been stopped
-        """
-        self._logger.debug('%s: schedule_stop ', self.__class__.__name__)
-        self._quitRecvEvent.set()
-        self._quitSendEvent.set()
-        self._recvThread.join(1)
-        self._sendThread.join(1)
-        for sock in self._select_in:
-            sock.close()
-
-    def join(self):
-        self._logger.debug('%s: join... ', self.__class__.__name__)
-        self._recvThread.join()
-        self._sendThread.join()
-        self._recvThread = None
-        self._sendThread = None
-        self._uniOutSocket.close()
-
-        self._unregister(self._multiInSocket)
-        self._multiInSocket.close()
-        self._logger.debug('%s: ... join done', self.__class__.__name__)
-
-    def _register(self, sock):
-        self._select_in.append(sock)
-
-    def _unregister(self, sock):
-        self._select_in.remove(sock)
-
-    def _recvMessages(self):
-        outputs = []
-        while self._select_in:
-            readable, dummy_writable, dummy_exceptional = select.select(self._select_in, outputs, self._select_in, 0.1)
-            if not readable:
-                break
-            sock = readable[0]
-            try:
-                data, addr = sock.recvfrom(BUFFER_SIZE)
-            except socket.error as e:
-                print('socket read error', e)
-                time.sleep(0.01)
-                continue
-#            if self.isFromMySocket(addr):
-#                continue
-#            #getCommunicationLogger().logDiscoveryMsgIn(addr[0], data)
-
-            env = discovery_messages_pb2.DiscoveryUdpMessage()
-            env.ParseFromString(data)
-            #env = parseEnvelope(data, addr[0])
-            if env is None:  # fault or failed to parse
-                continue
-            try:
-                mid = env.getMessageId()
-            except AttributeError:
-                print(traceback.format_exc())
-                raise
-            if mid in self._knownMessageIds:
-                self._logger.debug('message Id %s already known. This is a duplicate receive, ignoring.', mid)
-                continue
-            else:
-                self._knownMessageIds.appendleft(mid)
-                try:
-                    del self._knownMessageIds[-50]  # limit length of remembered message Ids
-                except IndexError:
-                    pass
-            iid = env.getInstanceId()
-            mid = env.getMessageId()
-            if iid:
-                mnum = env.getMessageNumber()
-                key = addr[0] + ":" + str(addr[1]) + ":" + str(iid)
-                if mid is not None and len(mid) > 0:
-                    key = key + ":" + mid
-                if not key in self._iidMap:
-                    self._iidMap[key] = iid
-                else:
-                    tmnum = self._iidMap[key]
-                    if mnum > tmnum:
-                        self._iidMap[key] = mnum
-                    else:
-                        continue
-            self._observer.envReceived(env, addr)
-
-    def _sendMsg(self, msg):
-        # action = msg._env.getAction().split('/')[-1]  # only last part
-        # if action in ('ResolveMatches', 'ProbeMatches'):
-        #     self._logger.debug('_sendMsg: sending %s %s to %s ProbeResolveMatches=%r, epr=%s, repeat=%d msgNo=%r',
-        #                        action,
-        #                        msg.msgType(),
-        #                        msg.getAddr(),
-        #                        msg._env.getProbeResolveMatches(),
-        #                        msg._env.getEPR(),
-        #                        msg._udpRepeat,
-        #                        msg._env._messageNumber
-        #                        )
-        # elif action == 'Probe':
-        #     self._logger.debug('_sendMsg: sending %s %s to %s types=%s scopes=%r',
-        #                        action,
-        #                        msg.msgType(),
-        #                        msg.getAddr(),
-        #                        _typesinfo(msg._env.getTypes()),
-        #                        msg._env.getScopes(),
-        #                        )
-        # else:
-        #     self._logger.debug('_sendMsg: sending %s %s to %s xaddr=%r, epr=%s, repeat=%d msgNo=%r',
-        #                        action,
-        #                        msg.msgType(),
-        #                        msg.getAddr(),
-        #                        msg._env.getXAddrs(),
-        #                        msg._env.getEPR(),
-        #                        msg._udpRepeat,
-        #                        msg._env._messageNumber
-        #                        )
-        #
-        data = msg.getEnv().SerializeToString()
-
-        if msg.msgType() == Message.UNICAST:
-            #getCommunicationLogger().logDiscoveryMsgOut(msg.getAddr(), data)
-            self._uniOutSocket.sendto(data, (msg.getAddr(), msg.getPort()))
-        else:
-            #getCommunicationLogger().logBroadCastMsgOut(data)
-            for sock in self._multiOutUniInSockets.values():
-                try:
-                    tmp = sock.getsockname()
-                except:
-                    pass
-                sock.sendto(data, (msg.getAddr(), msg.getPort()))
+    from collections.abc import Iterable
+    from logging import Logger
+    import ipaddress
+
+
+class Actions(StrEnum):
+    Hello = 'org.somda.protosc.discovery.action.Hello'
+    Bye = 'org.somda.protosc.discovery.action.Bye'
+    SearchRequest = 'org.somda.protosc.discovery.action.SearchRequest'
+    SearchResponse = 'org.somda.protosc.discovery.action.SearchResponse'
+
+
+def _fill_p_endpoint(service: Service, p_endpoint: discovery_types_pb2.Endpoint):
+    """fill p_endpoint with data from Service."""
+    p_endpoint.endpoint_identifier = service.epr
+    for addr in service.x_addrs:
+        uri = p_endpoint.physical_address.add()
+        uri.value = addr
+    for scope in service.scopes:
+        uri = p_endpoint.scope.add()
+        uri.value = scope
+    pass
+
+
+def _read_p_endpoint(p_endpoint: discovery_types_pb2.Endpoint) -> Service:
+    """Create a Service from p_endpoint."""
+    scopes = [uri.value for uri in p_endpoint.scope]
+    x_addrs = [uri.value for uri in p_endpoint.physical_address]
+    service = Service(scopes, x_addrs, p_endpoint.endpoint_identifier)
+    return service
 
 
 class GDiscovery(threading.Thread):
 
-    def __init__(self, logger=None):
-        '''
-        @param logger: use this logger. if None a logger 'sdc.discover' is created.
-        '''
-        self._networkingThread = None
-        #self._addrsMonitorThread = None
-        self._serverStarted = False
-        self._remoteServices = {}
-        self._localServices = {}
+    def __init__(self,
+                 ip_address: str | ipaddress.IPv4Address,
+                 logger: Logger | None = None,
+                 multicast_port: int = MULTICAST_PORT):
+        """Create a WsDiscovery instance.
 
-        #self._dpActive = False  # True if discovery proxy detected (is not relevant in sdc context)
-        #self._dpAddr = None
-        #self._dpEPR = None
-
-        self._remoteServiceHelloCallback = None
-        self._remoteServiceHelloCallbackTypesFilter = None
-        self._remoteServiceHelloCallbackScopesFilter = None
-        self._remoteServiceByeCallback = None
-        self._remoteServiceResolveMatchCallback = None  # B.D.
-        self._onProbeCallback = None
+        :param ip_address: network adapter to bind to
+        :param logger: use this logger. if None a logger 'sdc.discover' is created.
+        :param multicast_port: defaults to MULTICAST_PORT.
+               If port is changed, instance will not be able to communicate with implementations
+               that use the correct port (which is the default MULTICAST_PORT)!
+        """
+        super().__init__(name='GDiscovery thread')
+        self._adapter = network.get_adapter_containing_ip(ip_address)
+        self._networking_thread = None
+        self._addrs_monitor_thread = None
+        self._server_started = False
+        self._remote_services = {}
+        self._local_services = {}
+        self._remote_service_hello_callback = None
+        self._remote_service_hello_callback_types_filter = None
+        self._remote_service_hello_callback_scopes_filter = None
+        self._remote_service_bye_callback = None
+        self._remote_service_resolve_match_callback = None  # B.D.
+        self._on_probe_callback = None
 
         self._logger = logger or logging.getLogger('sdc.discover')
-        random.seed((int)(time.time() * 1000000))
-
-    def searchServices(self, types=None, scopes=None, timeout=5, repeatProbeInterval=3):
-        '''search for services given the TYPES and SCOPES in a given timeout
-        @param repeatProbeInterval: send another probe message after x seconds'''
-        if not self._serverStarted:
-            raise Exception("Server not started")
-
-        start = time.monotonic()
-        end = start + timeout
-        now = time.monotonic()
-        while now < end:
-            self._sendProbe(types, scopes)
-            if now + repeatProbeInterval <= end:
-                time.sleep(repeatProbeInterval)
-            elif now < end:
-                time.sleep(end - now)
-            now = time.monotonic()
-        return filterServices(self._remoteServices.values(), types, scopes)
-
-    def publishService(self, epr, types, scopes, xAddrs):
-        """Publish a service with the given TYPES, SCOPES and XAddrs (service addresses)
-
-        if xAddrs contains item, which includes {ip} pattern, one item per IP addres will be sent
-        """
-        if not self._serverStarted:
-            raise Exception("Server not started")
-
-        instanceId = _generateInstanceId()
-        service = Service(types, scopes, xAddrs, epr, instanceId)
-        self._logger.info('publishing %r', service)
-        self._localServices[epr] = service
-        self._sendHello(service)
+        self.multicast_port = multicast_port
 
     def start(self):
-        'start the discovery server - should be called before using other functions'
-        self._startThreads()
-        self._serverStarted = True
+        """Start the discovery server - should be called before using other functions."""
+        if not self._server_started:
+            self._start_threads()
+            self._server_started = True
 
     def stop(self):
-        'cleans up and stops the discovery server'
+        """Clean up and stop the discovery server."""
+        if self._server_started:
+            self.clear_remote_services()
+            self.clear_local_services()
 
-        self.clearRemoteServices()
-        self.clearLocalServices()
+            self._stop_threads()
+            self._server_started = False
 
-        self._stopThreads()
-        self._serverStarted = False
+    def search_services(self,
+                        # types: Iterable[QName] | None = None,
+                        search_filters: list[discovery_messages_pb2.SearchFilter] | None = None,
+                        timeout: int | float | None = 5,
+                        repeat_probe_interval: int | None = 3) -> Iterable[Service]:
+        """Search for services that match given search filters.
 
-    def _startThreads(self):
-        if self._networkingThread is not None:
+        :param search_filters: list of search filters, no filtering if value is None
+        :param timeout: total duration of search
+        :param repeat_probe_interval: send another probe message after x seconds
+        :return: list[Service]
+        """
+        if not self._server_started:
+            raise RuntimeError("Server not started")
+
+        msg = discovery_messages_pb2.DiscoveryMessage()
+        if search_filters:
+            for sf in search_filters:
+                msg.search_request.search_filter.append(sf)
+        msg.addressing.action = Actions.SearchRequest
+        msg.addressing.message_id = uuid.uuid4().hex
+        self._networking_thread.add_multicast_message(msg, MULTICAST_IPV4_ADDRESS, self.multicast_port)
+        time.sleep(timeout)
+        services = list(self._remote_services.values())
+        if search_filters:
+            return filter_services(services, search_filters)
+        else:
+            return services
+
+    def publish_service(self,
+                        epr: str,
+                        scopes,
+                        x_addrs: list[str]):
+        """Publish a service with the given parameters.
+
+        """
+        if not self._server_started:
+            raise ApiUsageError("Server not started")
+
+        service = Service(scopes, x_addrs, epr)
+        self._logger.info('publishing %r', service)
+        self._local_services[epr] = service
+        self._send_hello(service)
+
+    def clear_remote_services(self):
+        """Clear remotely discovered services."""
+        self._remote_services.clear()
+
+    def clear_local_services(self):
+        """Send Bye messages for the services and remove them."""
+        for service in self._local_services.values():
+            self._send_bye(service)
+        self._local_services.clear()
+
+    def clear_service(self, epr: str):
+        """Clear local service with given epr."""
+        service = self._local_services[epr]
+        self._send_bye(service)
+        del self._local_services[epr]
+
+    def get_active_addresses(self) -> list[str]:
+        """Get active addresses."""
+        # TODO: do not return list
+        return [str(self._adapter.ip)]
+
+    def _start_threads(self):
+        if self._networking_thread is not None:
             return
-        self._networkingThread = _NetworkingThread(self, self._logger)
-        self._networkingThread.start()
+        if platform.system() != 'Windows':
+            self._networking_thread = NetworkingThreadPosix(str(self._adapter.ip),
+                                                            self,
+                                                            self._logger,
+                                                            self.multicast_port)
+        else:
+            self._networking_thread = NetworkingThreadWindows(str(self._adapter.ip),
+                                                              self,
+                                                              self._logger,
+                                                              self.multicast_port)
+        self._networking_thread.start()
 
-    def _stopThreads(self):
-        if self._networkingThread is None:
+    def _stop_threads(self):
+        if self._networking_thread is None:
             return
-        self._networkingThread.schedule_stop()
-        self._networkingThread.join()
-        self._networkingThread = None
+        self._networking_thread.schedule_stop()
+        self._networking_thread.join()
+        self._networking_thread = None
 
-    def _sendHello(self, service: Service):
-        self._logger.info('sending hello on %s', service)
-        service.incrementMessageNumber()
-        p_msg = discovery_messages_pb2.DiscoveryMessage()
-        # env = SoapEnvelope()
-        # env.setAction(ACTION_HELLO)
-        # env.setTo(ADDRESS_ALL)
-        # env.setInstanceId(str(service.getInstanceId()))
-        # env.setMessageNumber(str(service.getMessageNumber()))
-        # env.setTypes(service.getTypes())
-        # env.setScopes(service.getScopes())
-        # env.setXAddrs(service.getXAddrs())
-        # env.setEPR(service.getEPR())
-        for sc in service.getScopes():
-            p_msg.hello.endpoint.scope.append(sc)
-        # for ty in service.getTypes():
-        #     p_ty = p_msg.hello.endpoint.type.add()
-        #     p_ty.localName = ty.localname
-        #     p_ty.namespace = ty.namespace
-        for x_addr in service.getXAddrs():
-            uri = p_msg.hello.endpoint.physical_address.add()
-            uri.value = x_addr
-        self._networkingThread.addMulticastMessage(p_msg, MULTICAST_IPV4_ADDRESS, MULTICAST_PORT,
-                                                   random.randint(0, APP_MAX_DELAY))
+    def _send_hello(self, service: Service):
+        self._logger.info('sending hello for epr %s', service.epr)
+        service.increment_message_number()
+        msg = discovery_messages_pb2.DiscoveryMessage()
+        _fill_p_endpoint(service, msg.hello.endpoint)
+        msg.addressing.action = Actions.Hello
+        msg.addressing.message_id = uuid.uuid4().hex
+        self._networking_thread.add_multicast_message(msg, MULTICAST_IPV4_ADDRESS, self.multicast_port)
+
+    def _send_bye(self, service: Service):
+        self._logger.debug('sending bye for epr "%s"', service.epr)
+        msg = discovery_messages_pb2.DiscoveryMessage()
+        _fill_p_endpoint(service, msg.bye.endpoint)
+        msg.addressing.action = Actions.Bye
+        msg.addressing.message_id = uuid.uuid4().hex
+        self._networking_thread.add_multicast_message(msg, MULTICAST_IPV4_ADDRESS, self.multicast_port)
+
+    def handle_received_message(self,
+                                received_message: discovery_messages_pb2.DiscoveryMessage,
+                                addr_from: tuple[str, int]):
+        """Forward received message to specific handler (dispatch by action)."""
+        action = received_message.addressing.action
+        self._logger.debug('handle_received_message: received %s from %s', action.split('/')[-1], addr_from)
+        lookup = {Actions.Hello: self._handle_received_hello,
+                  Actions.SearchRequest: self._handle_received_search_request,
+                  Actions.SearchResponse: self._handle_received_search_response,
+                  Actions.Bye: self._handle_received_bye,
+                  }
+        try:
+            func: Callable[[discovery_messages_pb2.DiscoveryMessage, tuple[str, int]], None] = lookup[action]
+        except KeyError:
+            self._logger.error('unknown action %s', action)
+        else:
+            func(received_message, addr_from)
+
+    def _handle_received_hello(self,
+                               received_message: discovery_messages_pb2.DiscoveryMessage,
+                               addr_from: tuple[str, int]):
+        self._logger.debug('received Hello from %s',  addr_from)
+        hello = received_message.hello
+        service = _read_p_endpoint(hello.endpoint)
+        self._add_remote_service(service)
+        # if self._remote_service_hello_callback is not None:
+        #     if matches_filter(service,
+        #                       self._remote_service_hello_callback_types_filter,
+        #                       self._remote_service_hello_callback_scopes_filter):
+        #         self._remote_service_hello_callback(addr_from, service)
+
+    def _handle_received_search_request(self,
+                                        received_message: discovery_messages_pb2.DiscoveryMessage,
+                                        addr_from: tuple[str, int]):
+        self._logger.debug('received SearchRequest from %s', addr_from)
+        request = received_message.search_request
+        all_services = self._local_services.values()
+        filtered_services = filter_services(all_services, request.search_filter)
+        response = discovery_messages_pb2.DiscoveryMessage()
+        response.addressing.action = Actions.SearchResponse
+        response.addressing.message_id = uuid.uuid4().hex
+        response.addressing.relates_id.value = received_message.addressing.message_id
+
+        for s in filtered_services:
+            ep = response.search_response.endpoint.add()
+            _fill_p_endpoint(s, ep)
+        # self._networking_thread.add_multicast_message(response, MULTICAST_IPV4_ADDRESS, self.multicast_port)
+        self._networking_thread.add_unicast_message(response, addr_from[0], addr_from[1])
+
+    def _handle_received_search_response(self,
+                                         received_message: discovery_messages_pb2.DiscoveryMessage,
+                                         addr_from: tuple[str, int]):
+        self._logger.debug('received SearchResponse from %s', addr_from)
+        search_response = received_message.search_response
+        services = [_read_p_endpoint(ep) for ep in search_response.endpoint]
+        for service in services:
+            self._add_remote_service(service)
+
+    def _handle_received_bye(self,
+                             received_message: discovery_messages_pb2.DiscoveryMessage,
+                             addr_from: tuple[str, int]):
+        epr = received_message.bye.endpoint.endpoint_identifier
+        self._logger.debug('received Bye from %s, epr = %s', addr_from, epr)
+        self._remove_remote_service(epr)
+
+    def _add_remote_service(self, service: Service):
+        if not service.epr:
+            self._logger.info('service without epr, ignoring it! %r', service)
+            return
+        already_known_service = self._remote_services.get(service.epr)
+        if not already_known_service:
+            self._remote_services[service.epr] = service
+            self._logger.info('new remote %r', service)
+            return
+
+    def _remove_remote_service(self, epr: str):
+        if epr in self._remote_services:
+            del self._remote_services[epr]

@@ -1,7 +1,7 @@
 import traceback
 import unittest
 import logging
-from tests.test_grpc_client_device import SomeDevice
+from tests.test_grpc_client_device import SomeProvider
 from org.somda.protosdc.proto.model import sdc_messages_pb2
 from org.somda.protosdc.proto.model.biceps.handleref_pb2 import HandleRefMsg
 
@@ -36,7 +36,7 @@ class Test_SomeDevice_GRPC(unittest.TestCase):
     def setUp(self) -> None:
         basic_logging_setup()
         self.wsd = None
-        self.sdc_device = SomeDevice.fromMdibFile(self.wsd, None, 'mdib_two_mds.xml', log_prefix='<Final> ')
+        self.sdc_device = SomeProvider.from_mdib_file(self.wsd, None, 'mdib_two_mds.xml', log_prefix='<Final> ')
         self.sdc_device._mdib.mdibVersion = 42 # start with some non-default value
         self.sdc_device.start_all()
 

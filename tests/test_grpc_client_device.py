@@ -1,10 +1,13 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING
 import unittest
 import logging
+import uuid
 import os
 import time
 from decimal import Decimal
-from pyprotosdc.consumer.consumer import GSdcClient
-from pyprotosdc.provider.provider import GSdcDevice
+from pyprotosdc.consumer.consumer import GSdcConsumer
+from pyprotosdc.provider.provider import GSdcProvider
 from pyprotosdc.discovery import GDiscovery
 from pyprotosdc.consumer.serviceclients.getservice import GetMdibResponseData
 from sdc11073.mdib.providermdib import ProviderMdib
@@ -20,22 +23,32 @@ from sdc11073.loghelper import basic_logging_setup
 from sdc11073.location import SdcLocation
 from sdc11073.observableproperties import SingleValueCollector
 from org.somda.protosdc.proto.model import sdc_messages_pb2
+from org.somda.protosdc.proto.model.discovery import discovery_messages_pb2
+
+if TYPE_CHECKING:
+    import uuid
+    from sdc11073.certloader import SSLContextContainer
 
 
-class SomeDevice(GSdcDevice):
+class SomeProvider(GSdcProvider):
     """A device used for unit tests
 
     """
-    def __init__(self, wsdiscovery, my_uuid, mdib_xml_string,
-                 validate=True, sslContext=None, logLevel=logging.INFO, log_prefix='',
-                 chunked_messages=False):
-        model = ThisModelType(manufacturer='Draeger CoC Systems',
+    def __init__(self,
+                 g_discovery: GDiscovery,
+                 epr: str | uuid.UUID | None,
+                 mdib_xml_string: bytes,
+                 ssl_context_container: SSLContextContainer | None = None,
+                 max_subscription_duration: int = 15,
+                 socket_timeout: int | float | None = None,
+                 log_prefix: str = ''):
+        this_model = ThisModelType(manufacturer='Draeger CoC Systems',
                               manufacturer_url='www.draeger.com',
                               model_name='SomeDevice',
                               model_number='1.0',
                               model_url='www.draeger.com/whatever/you/want/model',
                               presentation_url='www.draeger.com/whatever/you/want/presentation')
-        device = ThisDeviceType(friendly_name='Py SomeDevice',
+        this_device = ThisDeviceType(friendly_name='Py SomeDevice',
                                 firmware_version='0.99',
                                 serial_number='12345')
         device_mdib_container = ProviderMdib.from_string(mdib_xml_string, log_prefix=log_prefix)
@@ -46,19 +59,23 @@ class SomeDevice(GSdcDevice):
             if mds_descriptor.MetaData is None:
                 mds_descriptor.MetaData = pm_types.MetaData()
             mds_descriptor.MetaData.Manufacturer = [pm_types.LocalizedText(u'Dräger')]
-            mds_descriptor.MetaData.ModelName = [pm_types.LocalizedText(model.ModelName[0].text)]
+            mds_descriptor.MetaData.ModelName = [pm_types.LocalizedText(this_model.ModelName[0].text)]
             mds_descriptor.MetaData.SerialNumber = ['ABCD-1234']
             mds_descriptor.MetaData.ModelNumber = '0.99'
-        super(SomeDevice, self).__init__(wsdiscovery, my_uuid, model, device, device_mdib_container, validate,
-                                         # registerDefaultOperations=True,
-                                         sslContext=sslContext, logLevel=logLevel, log_prefix=log_prefix,
-                                         chunked_messages=chunked_messages)
+        super().__init__(g_discovery, this_model, this_device, device_mdib_container, epr,
+                         ssl_context_container, max_subscription_duration, socket_timeout, log_prefix)
         # self._handler.mkDefaultRoleHandlers()
 
 
     @classmethod
-    def fromMdibFile(cls, wsdiscovery, my_uuid, mdib_xml_path,
-                     validate=True, sslContext=None, logLevel=logging.INFO, log_prefix='', chunked_messages=False):
+    def from_mdib_file(cls,
+                       g_discovery: GDiscovery,
+                       epr: str | None,
+                       mdib_xml_path: str,
+                       ssl_context_container: SSLContextContainer | None = None,
+                       max_subscription_duration: int = 15,
+                       socket_timeout: int | float | None = None,
+                       log_prefix: str = ''):
         """
         An alternative constructor for the class
         """
@@ -68,8 +85,8 @@ class SomeDevice(GSdcDevice):
 
         with open(mdib_xml_path, 'rb') as f:
             mdib_xml_string = f.read()
-        return cls(wsdiscovery, my_uuid, mdib_xml_string, validate, sslContext, logLevel, log_prefix=log_prefix,
-                   chunked_messages=chunked_messages)
+        return cls(g_discovery, epr, mdib_xml_string, ssl_context_container, max_subscription_duration,
+                   socket_timeout, log_prefix)
 
 
 SET_TIMEOUT = 4
@@ -79,11 +96,14 @@ NOTIFICATION_TIMEOUT = 2
 class TestClientSomeDeviceGRPC(unittest.TestCase):
     def setUp(self) -> None:
         basic_logging_setup()
-        self.wsd = GDiscovery()
+        ip_address = '127.0.0.1'
+        self.provider_epr = uuid.uuid4().urn
+        self.wsd = GDiscovery(ip_address)
         self.wsd.start()
-        self.sdc_provider = SomeDevice.fromMdibFile(self.wsd, None, 'mdib_two_mds.xml', log_prefix='<Final> ')
+        self.sdc_provider = SomeProvider.from_mdib_file(self.wsd, self.provider_epr, 'mdib_two_mds.xml', log_prefix='<Final> ')
         self.sdc_provider.mdib.mdibVersion = 42
         self.sdc_provider.start_all(startRealtimeSampleLoop=False)
+        time.sleep(0.5)
         self._loc_validators = [pm_types.InstanceIdentifier('Validator', extension_string='System')]
         loc = SdcLocation(fac='tklx', poc='CU1', bed='bed1')
         self.sdc_provider.set_location(loc, self._loc_validators)
@@ -99,12 +119,13 @@ class TestClientSomeDeviceGRPC(unittest.TestCase):
         self.dev_sequence_id = self.sdc_provider.mdib.sequence_id
         print(f'{self._testMethodName}: started sdc device, sequence id = {self.sdc_provider.mdib.sequence_id}')
         time.sleep(0.5)
-        self.sdc_consumer = GSdcClient('localhost:50051')
+        port = self.sdc_provider._port_number
+        self.sdc_consumer = GSdcConsumer(f'{ip_address}:{port}')
 
     def tearDown(self) -> None:
         self.sdc_provider.stop_all()
         print(f'{self._testMethodName}: stopped sdc device, sequence id = {self.sdc_provider.mdib.sequence_id}')
-        # _stop_logger(self._log_handler)
+        self.wsd.stop()
 
     @staticmethod
     def provideRealtimeData(sdc_provider):
@@ -124,6 +145,16 @@ class TestClientSomeDeviceGRPC(unittest.TestCase):
                                                    trigger_handle='0x34F05501',
                                                    annotated_handles=('0x34F05500', '0x34F05501', '0x34F05506'))
 
+    def test_discover(self):
+        disco_consumer = GDiscovery('127.0.0.1', logger=logging.getLogger('sdc.discover.consumer'))
+        disco_consumer.start()
+
+        search_filter = discovery_messages_pb2.SearchFilter()
+        search_filter.endpoint_identifier = self.provider_epr
+
+        services = disco_consumer.search_services([search_filter], timeout=2)
+        print(services)
+        self.assertEqual(len(services), 1)
 
     def test_basic_connect(self):
         "Verify that get_mdib returns a valid result."
@@ -140,7 +171,7 @@ class TestClientSomeDeviceGRPC(unittest.TestCase):
         # self.provideRealtimeData(self.sdc_provider)
         # self.sdc_consumer.subscribe_all()
         cl_mdib = GClientMdibContainer(self.sdc_consumer)
-        cl_mdib.initMdib()
+        cl_mdib.init_mdib()
         self.assertEqual(cl_mdib.mdib_version, self.sdc_provider._mdib.mdib_version)
         self.assertEqual(cl_mdib.sequence_id, self.sdc_provider._mdib.sequence_id)
         self.assertEqual(cl_mdib.instance_id, self.sdc_provider._mdib.instance_id)
@@ -155,7 +186,7 @@ class TestClientSomeDeviceGRPC(unittest.TestCase):
     def test_metric_transaction(self):
         self.sdc_consumer.subscribe_all()
         cl_mdib = GClientMdibContainer(self.sdc_consumer)
-        cl_mdib.initMdib()
+        cl_mdib.init_mdib()
         metrics = cl_mdib.descriptions.NODETYPE.get(pm_qnames.NumericMetricDescriptor)
         metric_handle = metrics[0].Handle
         coll = SingleValueCollector(cl_mdib, 'metrics_by_handle')
@@ -174,7 +205,7 @@ class TestClientSomeDeviceGRPC(unittest.TestCase):
     def test_alert_transaction(self):
         self.sdc_consumer.subscribe_all()
         cl_mdib = GClientMdibContainer(self.sdc_consumer)
-        cl_mdib.initMdib()
+        cl_mdib.init_mdib()
         conds = cl_mdib.descriptions.NODETYPE.get(pm_qnames.AlertConditionDescriptor)
         sigs = cl_mdib.descriptions.NODETYPE.get(pm_qnames.AlertSignalDescriptor)
         syss = cl_mdib.descriptions.NODETYPE.get(pm_qnames.AlertSystemDescriptor)
@@ -204,7 +235,7 @@ class TestClientSomeDeviceGRPC(unittest.TestCase):
     def test_descriptor_transaction(self):
         self.sdc_consumer.subscribe_all()
         cl_mdib = GClientMdibContainer(self.sdc_consumer)
-        cl_mdib.initMdib()
+        cl_mdib.init_mdib()
         asyss = cl_mdib.descriptions.NODETYPE.get(pm_qnames.AlertSystemDescriptor)
         descriptor_handle = asyss[0].Handle
 
@@ -221,7 +252,7 @@ class TestClientSomeDeviceGRPC(unittest.TestCase):
     def test_component_state_transaction(self):
         self.sdc_consumer.subscribe_all()
         cl_mdib = GClientMdibContainer(self.sdc_consumer)
-        cl_mdib.initMdib()
+        cl_mdib.init_mdib()
 
         vmds = cl_mdib.descriptions.NODETYPE.get(pm_qnames.VmdDescriptor)
         vmd_handle = vmds[0].Handle
@@ -239,7 +270,7 @@ class TestClientSomeDeviceGRPC(unittest.TestCase):
     def test_context_state_transaction(self):
         self.sdc_consumer.subscribe_all()
         cl_mdib = GClientMdibContainer(self.sdc_consumer)
-        cl_mdib.initMdib()
+        cl_mdib.init_mdib()
 
         coll = SingleValueCollector(cl_mdib, 'context_by_handle')
         new_location = SdcLocation(fac='tklx', poc='CU2', bed='b42')
@@ -288,7 +319,7 @@ class TestClientSomeDeviceGRPC(unittest.TestCase):
 
         set_service = self.sdc_consumer.client('Set')
         consumer_mdib = GClientMdibContainer(self.sdc_consumer)
-        consumer_mdib.initMdib()
+        consumer_mdib.init_mdib()
 
         operation_handle = operation_descriptor_container.Handle
         proposed_metric_state = consumer_mdib.xtra.mk_proposed_state(metric_state_handle)
@@ -312,7 +343,7 @@ class TestClientSomeDeviceGRPC(unittest.TestCase):
         self.sdc_consumer.subscribe_all()
         time.sleep(1)
         cl_mdib = GClientMdibContainer(self.sdc_consumer)
-        cl_mdib.initMdib()
+        cl_mdib.init_mdib()
 
         ops = cl_mdib.descriptions.NODETYPE.get(pm_qnames.SetStringOperationDescriptor)
         op_handle = ops[0].Handle
@@ -337,14 +368,14 @@ class TestClientSomeDeviceGRPC(unittest.TestCase):
         op_handle = 'HANDLE_FOR_MY_TEST'
 
         # first we need to add a setValue Operation
-        scoDescriptors = self.sdc_provider.mdib.descriptions.NODETYPE.get(pm_qnames.ScoDescriptor)
+        sco_descriptors = self.sdc_provider.mdib.descriptions.NODETYPE.get(pm_qnames.ScoDescriptor)
         cls = descriptorcontainers.SetValueOperationDescriptorContainer
-        myCode = pm_types.CodedValue('99999')
+        my_code = pm_types.CodedValue('99999')
         factory = self.sdc_provider.mdib.xtra.descriptor_factory
         operation_descriptor_container = factory._create_descriptor_container(cls,
                                                                               op_handle,
-                                                                              scoDescriptors[0].Handle,
-                                                                              myCode,
+                                                                              sco_descriptors[0].Handle,
+                                                                              my_code,
                                                                               pm_types.SafetyClassification.INF)
         metrics = self.sdc_provider.mdib.descriptions.NODETYPE.get(pm_qnames.NumericMetricDescriptor)
         metric_state_handle = metrics[0].Handle
@@ -364,9 +395,9 @@ class TestClientSomeDeviceGRPC(unittest.TestCase):
         self.sdc_provider.mdib.xtra.mk_state_containers_for_all_descriptors()
 
         cl_mdib = GClientMdibContainer(self.sdc_consumer)
-        cl_mdib.initMdib()
+        cl_mdib.init_mdib()
 
-        op_descr = cl_mdib.descriptions.handle.get_one(op_handle)
+        # op_descr = cl_mdib.descriptions.handle.get_one(op_handle)
         set_service = self.sdc_consumer.client('Set')
         future = set_service.set_value(op_handle, Decimal('42'))
         result = future.result(timeout=SET_TIMEOUT)
@@ -378,19 +409,19 @@ class TestClientSomeDeviceGRPC(unittest.TestCase):
         self.sdc_consumer.subscribe_all()
 
         cl_mdib = GClientMdibContainer(self.sdc_consumer)
-        cl_mdib.initMdib()
+        cl_mdib.init_mdib()
 
         ops = cl_mdib.descriptions.NODETYPE.get(pm_qnames.ActivateOperationDescriptor)
         op_handle = ops[0].Handle
-        setService = self.sdc_consumer.client('Set')
-        future = setService.activate(op_handle, ['42'])
+        set_service = self.sdc_consumer.client('Set')
+        future = set_service.activate(op_handle, ['42'])
         result = future.result(timeout=SET_TIMEOUT)
         state = result.InvocationInfo.InvocationState
         self.assertEqual(state, msg_types.InvocationState.FINISHED)
         self.assertIsNone(result.InvocationInfo.InvocationError)
 
         op_handle = 'invalid_handle'  # an invalid handle
-        future = setService.activate(op_handle, ['42'])
+        future = set_service.activate(op_handle, ['42'])
         result = future.result(timeout=SET_TIMEOUT)
         state = result.InvocationInfo.InvocationState
         self.assertEqual(state, msg_types.InvocationState.FAILED)
@@ -400,22 +431,21 @@ class TestClientSomeDeviceGRPC(unittest.TestCase):
     def test_setComponentState(self):
         self.sdc_consumer.subscribe_all()
         consumer_mdib = GClientMdibContainer(self.sdc_consumer)
-        consumer_mdib.initMdib()
+        consumer_mdib.init_mdib()
 
         ops = consumer_mdib.descriptions.NODETYPE.get(pm_qnames.SetComponentStateOperationDescriptor)
         op_handle = ops[0].Handle
 
         op_descr = consumer_mdib.descriptions.handle.get_one(op_handle)
         op_target_handle = op_descr.OperationTarget
-        setService = self.sdc_consumer.client('Set')
+        set_service = self.sdc_consumer.client('Set')
 
         proposed_component_state = consumer_mdib.xtra.mk_proposed_state(op_target_handle)
         new_operating_hours = 42
         proposed_component_state.OperatingHours = new_operating_hours
 
-        future = setService.set_component_state(op_handle, [proposed_component_state])
+        future = set_service.set_component_state(op_handle, [proposed_component_state])
         result = future.result(timeout=SET_TIMEOUT)
         state = result.InvocationInfo.InvocationState
         self.assertEqual(state, msg_types.InvocationState.FINISHED)
         self.assertIsNone(result.InvocationInfo.InvocationError)
-
