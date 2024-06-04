@@ -1,25 +1,138 @@
 from __future__ import annotations
+
+import queue
+import threading
+import time
+import traceback
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
+
+from org.somda.protosdc.proto.model import sdc_messages_pb2
 from sdc11073 import loghelper
-from sdc11073.provider.sco import _OperationsWorker
+from sdc11073.exceptions import ApiUsageError
 
 if TYPE_CHECKING:
     from enum import Enum
     from sdc11073.mdib.descriptorcontainers import AbstractDescriptorProtocol
     from sdc11073.roles.providerbase import OperationClassGetter
-    from sdc11073.provider.porttypes.setserviceimpl import SetServiceProtocol
     from sdc11073.mdib.providermdib import ProviderMdib
     from sdc11073.provider.sco import OperationDefinitionBase
+    from sdc11073.xml_types.msg_types import AbstractSet
+    from .subscriptionmgr import GSubscriptionsManager
+
+AnySetServiceRequest = (sdc_messages_pb2.SetAlertStateRequest
+                        | sdc_messages_pb2.SetContextStateRequest
+                        | sdc_messages_pb2.SetComponentStateRequest
+                        | sdc_messages_pb2.SetContextStateRequest
+                        | sdc_messages_pb2.SetMetricStateRequest
+                        | sdc_messages_pb2.SetValueRequest
+                        | sdc_messages_pb2.SetStringRequest
+                        | sdc_messages_pb2.ActivateRequest)
+
+
+@dataclass
+class _EnqueuedOperation:
+    transaction_id: int
+    operation: OperationDefinitionBase | None
+    request: AnySetServiceRequest | None
+    operation_request: AbstractSet | None
+
+
+stop_msg = _EnqueuedOperation(-1, None, None, None)  # special instance that is uses as stop message
+
+
+class _OperationsWorker(threading.Thread):
+    """Thread that enqueues and processes all operations.
+
+    Progress notifications are sent via subscription manager.
+    """
+
+    def __init__(self,
+                 operations_registry: ScoOperationsRegistry,
+                 subscriptions_manager: GSubscriptionsManager,
+                 mdib: ProviderMdib,
+                 log_prefix: str):
+        super().__init__(name='DeviceOperationsWorker')
+        self.daemon = True
+        self._operations_registry = operations_registry
+        self._subscriptions_manager = subscriptions_manager
+        self._mdib = mdib
+        self._operations_queue = queue.Queue(10)  # spooled operations
+        self._logger = loghelper.get_logger_adapter('sdc.device.op_worker', log_prefix)
+
+    def enqueue_operation(self, operation: OperationDefinitionBase,
+                          request: AnySetServiceRequest,
+                          operation_request: AbstractSet,
+                          transaction_id: int):
+        """Enqueue operation."""
+        self._operations_queue.put(_EnqueuedOperation(transaction_id, operation, request, operation_request), timeout=1)
+
+    def run(self):
+        data_model = self._mdib.data_model
+        InvocationState = data_model.msg_types.InvocationState  # noqa: N806
+        InvocationError = data_model.msg_types.InvocationError  # noqa: N806
+        while True:
+            try:
+                try:
+                    from_queue: _EnqueuedOperation = self._operations_queue.get(timeout=1.0)
+                except queue.Empty:
+                    self._operations_registry.check_invocation_timeouts()
+                else:
+                    if from_queue.transaction_id == -1:
+                        self._logger.info('stop request found. Terminating now.')
+                        return
+                    # tr_id, operation, request, operation_request = from_queue  # unpack tuple
+                    time.sleep(0.001)
+                    self._logger.info('%s: starting operation "%s" argument=%r',
+                                      from_queue.operation.__class__.__name__,
+                                      from_queue.operation.handle, from_queue.operation_request.argument)
+                    # duplicate the WAIT response to the operation request as notification. Standard requires this.
+                    self._subscriptions_manager.send_operation_invoked_report(
+                        from_queue.operation, from_queue.transaction_id, InvocationState.WAIT,
+                        self._mdib.mdib_version_group)
+                    time.sleep(0.001)  # not really necessary, but in real world there might also be some delay.
+                    self._subscriptions_manager.send_operation_invoked_report(
+                        from_queue.operation, from_queue.transaction_id, InvocationState.START,
+                        self._mdib.mdib_version_group)
+
+                    try:
+                        execute_result = from_queue.operation.execute_operation(from_queue.request,
+                                                                                from_queue.operation_request)
+                        self._logger.info('%s: successfully finished operation "%s"',
+                                          from_queue.operation.__class__.__name__, from_queue.operation.handle)
+                        self._subscriptions_manager.send_operation_invoked_report(
+                            from_queue.operation, from_queue.transaction_id, execute_result.invocation_state,
+                            self._mdib.mdib_version_group,
+                            execute_result.operation_target_handle)
+
+                    except Exception as ex:
+                        self._logger.error('%s: error executing operation "%s": %s',
+                                           from_queue.operation.__class__.__name__,
+                                           from_queue.operation.handle, traceback.format_exc())
+                        self._subscriptions_manager.send_operation_invoked_report(
+                            from_queue.operation, from_queue.transaction_id, InvocationState.FAILED,
+                            self._mdib.mdib_version_group,
+                            error=InvocationError.OTHER, error_message=repr(ex))
+
+            except Exception:
+                self._logger.error('%s: unexpected error while handling operation: %s',
+                                   self.__class__.__name__, traceback.format_exc())
+
+    def stop(self):
+        self._operations_queue.put(stop_msg)  # a dummy request to stop the thread
+        self.join(timeout=1)
+
 
 class ScoOperationsRegistry:
 
-    def __init__(self, set_service: SetServiceProtocol,
+    def __init__(self,
+                 subscriptions_manager: GSubscriptionsManager,
                  operation_cls_getter: OperationClassGetter,
                  mdib: ProviderMdib,
                  sco_descriptor_container: AbstractDescriptorProtocol,
                  log_prefix: str | None = None):
         self._worker = None
-        self._set_service: SetServiceProtocol = set_service
+        self._subscriptions_manager = subscriptions_manager
         self.operation_cls_getter = operation_cls_getter
         self._mdib = mdib
         self.sco_descriptor_container = sco_descriptor_container
@@ -63,23 +176,25 @@ class ScoOperationsRegistry:
             execute_result = operation.execute_operation(request, operation_request)
             self._logger.info('%s: successfully finished operation "%s"', operation.__class__.__name__,
                               operation.handle)
-            self._set_service.notify_operation(operation, transaction_id, execute_result.invocation_state,
-                                               self._mdib.mdib_version_group, execute_result.operation_target_handle)
+            self._subscriptions_manager.send_operation_invoked_report(
+                operation, transaction_id, execute_result.invocation_state, self._mdib.mdib_version_group,
+                execute_result.operation_target_handle)
             self._logger.debug('notifications for operation %s sent', operation.handle)
             return InvocationState.FINISHED
         except Exception as ex:
             self._logger.error('%s: error executing operation "%s": %s', operation.__class__.__name__,
                                operation.handle, traceback.format_exc())
-            self._set_service.notify_operation(
+            self._subscriptions_manager.send_operation_invoked_report(
                 operation, transaction_id, InvocationState.FAILED, self._mdib.mdib_version_group,
                 error=self._mdib.data_model.msg_types.InvocationError.OTHER, error_message=repr(ex))
+
             return InvocationState.FAILED
 
     def start_worker(self):
         """Start worker thread."""
         if self._worker is not None:
             raise ApiUsageError('SCO worker is already running')
-        self._worker = _OperationsWorker(self, self._set_service, self._mdib, self._log_prefix)
+        self._worker = _OperationsWorker(self, self._subscriptions_manager, self._mdib, self._log_prefix)
         self._worker.start()
 
     def stop_worker(self):

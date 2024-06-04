@@ -1,6 +1,7 @@
 from __future__ import annotations
 import logging
 import threading
+import traceback
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from org.somda.protosdc.proto.model import sdc_services_pb2_grpc, sdc_messages_pb2
@@ -12,10 +13,9 @@ from pyprotosdc.mapping.mapping_helpers import get_p_attr
 from pyprotosdc.mapping.msgtypes_mappers import get_mdib_version_group
 
 if TYPE_CHECKING:
-    from sdc11073.mdib.descriptorcontainers import AbstractDescriptorContainer
-    from sdc11073.mdib.statecontainers import AbstractStateContainer
     from pyprotosdc.msgreader import MessageReader
     from sdc11073.xml_types.actions import Actions
+
 
 @dataclass
 class EpisodicReportData:
@@ -25,7 +25,7 @@ class EpisodicReportData:
     msg_reader: MessageReader
 
 
-class MdibReportingService_Wrapper:
+class MdibReportingServiceWrapper:
     episodic_report = observableproperties.ObservableProperty()
     def __init__(self, channel, msg_reader: MessageReader):
         self._stub = sdc_services_pb2_grpc.MdibReportingServiceStub(channel)
@@ -40,6 +40,7 @@ class MdibReportingService_Wrapper:
         self._report_reader_thread.start()
 
     def _read_episodic_reports(self):
+        """Method is executed in a thread."""
         request = sdc_messages_pb2.EpisodicReportRequest()
         f = request.filter.action_filter.action
         actions = [SdcV1Definitions.Actions.Waveform,
@@ -51,48 +52,44 @@ class MdibReportingService_Wrapper:
                    SdcV1Definitions.Actions.EpisodicOperationalStateReport]
         f.extend(actions)
         for response in self._stub.EpisodicReport(request):
-            print(f'Response received')
-            self.episodic_report = self._map_report(response)
+            try:
+                self.episodic_report = self._map_report(response)
+            except:
+                self._logger.error(traceback.format_exc())
         print(f'end of EpisodicReports')
 
-    def _map_report(self, report_stream: sdc_messages_pb2.EpisodicReportStream):
+    def _map_report(self, report_stream: sdc_messages_pb2.EpisodicReportStream) -> EpisodicReportData:
         report = report_stream.report
-        if report.HasField('waveform'):
-            actual_report = report.waveform
+        which = report.WhichOneof(report.DESCRIPTOR.oneofs[0].name)
+        actual_report = getattr(report, which)
+
+        if which == 'waveform':
             action = SdcV1Definitions.Actions.Waveform
             mdib_version_group_msg = get_p_attr(actual_report.abstract_report,
                                                 'MdibVersionGroup')
-        # elif report_stream.addressing.action == SdcV1Definitions.Actions.EpisodicMetricReport:
-        elif report.HasField('metric'):
-            actual_report = report.metric
+        elif which == 'metric':
             action = SdcV1Definitions.Actions.EpisodicMetricReport
             mdib_version_group_msg = get_p_attr(actual_report.abstract_metric_report.abstract_report,
                                                 'MdibVersionGroup')
-        elif report.HasField('alert'):
-            actual_report = report.alert
+        elif which == 'alert':
             action = SdcV1Definitions.Actions.EpisodicAlertReport
             mdib_version_group_msg = get_p_attr(actual_report.abstract_alert_report.abstract_report,
                                                 'MdibVersionGroup')
-        elif report.HasField('component'):
-            actual_report = report.component
+        elif which == 'component':
             action = SdcV1Definitions.Actions.EpisodicComponentReport
             mdib_version_group_msg = get_p_attr(actual_report.abstract_component_report.abstract_report,
                                                 'MdibVersionGroup')
-        elif report.HasField('context'):
-            actual_report = report.context
+        elif which == 'context':
             action = SdcV1Definitions.Actions.EpisodicContextReport
             mdib_version_group_msg = get_p_attr(actual_report.abstract_context_report.abstract_report,
                                                 'MdibVersionGroup')
-        elif report.HasField('description'):
-            actual_report = report.description
+        elif which == 'description':
             action = SdcV1Definitions.Actions.DescriptionModificationReport
             mdib_version_group_msg = get_p_attr(actual_report.abstract_report,
                                                 'MdibVersionGroup')
-            mdib_version_group = get_mdib_version_group(mdib_version_group_msg)
-        elif report.HasField('operational_state'):
-            actual_report = report.operational_state
+        elif which == 'operational_state':
             action = SdcV1Definitions.Actions.EpisodicOperationalStateReport
-            mdib_version_group_msg = get_p_attr(actual_report.abstract_report,
+            mdib_version_group_msg = get_p_attr(actual_report.abstract_operational_state_report.abstract_report,
                                                 'MdibVersionGroup')
         else:
             raise ValueError(' do not know how to handle report')

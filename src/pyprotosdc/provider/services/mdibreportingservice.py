@@ -1,12 +1,15 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING
 import logging
 from org.somda.protosdc.proto.model import sdc_services_pb2_grpc
-from org.somda.protosdc.proto.model.sdc_messages_pb2 import EpisodicReportStream
-import grpc
+
+if TYPE_CHECKING:
+    from pyprotosdc.provider.subscriptionmgr import GSubscriptionsManager
 
 
 class MdibReportingService(sdc_services_pb2_grpc.MdibReportingServiceServicer):
 
-    def __init__(self, subscriptions_manager):
+    def __init__(self, subscriptions_manager: GSubscriptionsManager):
         super().__init__()
         self._subscriptions_manager = subscriptions_manager
         self._subscription = None
@@ -16,17 +19,19 @@ class MdibReportingService(sdc_services_pb2_grpc.MdibReportingServiceServicer):
     def EpisodicReport(self, request, context):
         actions = list(request.filter.action_filter.action)
         self._logger.info('EpisodicReport called')
-        self._subscription = self._subscriptions_manager.on_subscribe_request(actions)
+        subscription = self._subscriptions_manager.on_subscribe_request(actions)
         _run = True
-        while _run:
-            report = self._subscription.reports.get()
-            if report == 'stop':
-                _run = False
-            else:
-                self._logger.info('yield EpisodicReport %s', report.__class__.__name__)
-                self.show_fields(report)
-                yield report
-                self._logger.info('yield EpisodicReport done')
+        try:
+            while _run:
+                report = subscription.reports.get()
+                if report == 'stop':
+                    _run = False
+                else:
+                    self._logger.info('yield EpisodicReport %s', report.addressing.action)
+                    yield report
+        finally:
+            self._logger.info('EpisodicReport end')
+            self._subscriptions_manager.remove_subscription(subscription)
 
     def show_fields(self, report):
         try:

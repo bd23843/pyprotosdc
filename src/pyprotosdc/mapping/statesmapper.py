@@ -3,6 +3,7 @@ import logging
 
 from org.somda.protosdc.proto.model.biceps.abstractcomplexdevicecomponentstate_pb2 import \
     AbstractComplexDeviceComponentStateMsg
+from org.somda.protosdc.proto.model.biceps.abstractoperationstate_pb2 import AbstractOperationStateMsg
 from org.somda.protosdc.proto.model.biceps.activateoperationstate_pb2 import ActivateOperationStateMsg
 from org.somda.protosdc.proto.model.biceps.alertconditionstate_pb2 import AlertConditionStateMsg
 from org.somda.protosdc.proto.model.biceps.alertsignalstate_pb2 import AlertSignalStateMsg
@@ -63,16 +64,9 @@ _to_cls[sc.LimitAlertConditionStateContainer] = LimitAlertConditionStateMsg
 _to_cls[sc.LocationContextStateContainer] = LocationContextStateMsg
 _to_cls[sc.PatientContextStateContainer] = PatientContextStateMsg
 _to_cls[sc.AbstractComplexDeviceComponentStateContainer] = AbstractComplexDeviceComponentStateMsg
-
+_to_cls[sc.AbstractOperationStateContainer] = AbstractOperationStateMsg
 # invert for other direction lookup
 _from_cls = dict((v, k) for (k, v) in _to_cls.items())
-
-
-def find_one_of_state(p):
-    fields = p.ListFields()
-    if len(fields) != 1:
-        raise ValueError(f'p has {len(fields)} fields, expect exactly one')
-    return fields[0][1]
 
 
 def generic_state_to_p(state, p):
@@ -91,7 +85,10 @@ def _p_walk(p, ret=None):
         for field in fields:
             ret.extend(_p_walk(field[1]))
     else:
-        pm_cls = _from_cls[p.__class__]
+        try:
+            pm_cls = _from_cls[p.__class__]
+        except KeyError:
+            raise
         classes = inspect.getmro(pm_cls)
         p_current_entry_point = None
         for tmp_cls in classes:

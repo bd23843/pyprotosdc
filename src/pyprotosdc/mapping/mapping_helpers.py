@@ -54,7 +54,19 @@ def p_name_from_pm_name(p: GeneratedProtocolMessageType, pm_cls: type, pm_name: 
 
 
 def is_one_of_msg(p: GeneratedProtocolMessageType) -> bool:
-    return p.__class__.__name__.endswith('OneOfMsg')
+    try:
+        return len(p.DESCRIPTOR.oneofs) > 0
+    except AttributeError:
+        return False
+    # return p.__class__.__name__.endswith('OneOfMsg')
+
+
+def find_one_of_state(p: GeneratedProtocolMessageType) -> GeneratedProtocolMessageType:
+    if not p.DESCRIPTOR.oneofs:
+        # p has no oneof fields
+        return p
+    which = p.WhichOneof(p.DESCRIPTOR.oneofs[0].name)
+    return getattr(p, which)
 
 
 def find_populated_one_of(p: Message):

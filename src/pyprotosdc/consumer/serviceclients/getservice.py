@@ -22,9 +22,22 @@ class GetMdibResponseData:
     descriptors: list[AbstractDescriptorContainer]
     states: list[AbstractStateContainer]
 
-class GetService_Wrapper():
+
+@dataclass
+class GetContextStatesResponseData:
+    mdib_version_group: MdibVersionGroup
+    p_response: sdc_messages_pb2.GetContextStatesResponse
+    states: list[AbstractStateContainer]
+
+
+class GetMdDescriptionResponseData:
+    mdib_version_group: MdibVersionGroup
+    p_response: sdc_messages_pb2.GetMdDescriptionResponse
+    descriptors: list[AbstractDescriptorContainer]
+
+
+class GetServiceWrapper():
     def __init__(self, channel, msg_reader: MessageReader):
-        # super().__init__(channel)
         self._stub = sdc_services_pb2_grpc.GetServiceStub(channel)
         self._msg_reader = msg_reader
 
@@ -35,3 +48,20 @@ class GetService_Wrapper():
         mdib_version_group = get_mdib_version_group(mdib_version_group_msg)
         descriptors, states = self._msg_reader.read_get_mdib_response(response)
         return GetMdibResponseData(mdib_version_group, response, descriptors, states)
+
+    def get_md_description(self) -> GetMdDescriptionResponseData:
+        request = sdc_messages_pb2.GetMdDescriptionRequest()
+        response = self._stub.GetMdDescription(request)
+        mdib_version_group_msg = get_p_attr(response.payload.abstract_get_response, 'MdibVersionGroup')
+        mdib_version_group = get_mdib_version_group(mdib_version_group_msg)
+        descriptors = self._msg_reader.read_md_description(response.payload.mdib.md_description)
+        return GetMdDescriptionResponseData(mdib_version_group, response, descriptors)
+
+    def get_context_states(self) -> GetContextStatesResponseData:
+        request = sdc_messages_pb2.GetContextStatesRequest()
+        response = self._stub.GetContextStates(request)
+        mdib_version_group_msg = get_p_attr(response.payload.abstract_get_response, 'MdibVersionGroup')
+        mdib_version_group = get_mdib_version_group(mdib_version_group_msg)
+        mdib = None
+        descriptors = self._msg_reader.read_states(response.payload.context_state, mdib)
+        return GetContextStatesResponseData(mdib_version_group, response, descriptors)

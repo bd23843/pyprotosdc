@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import List, TYPE_CHECKING
 from .mapping import descriptorsmapper as dm
 from .mapping import statesmapper as sm
-from .mapping.mapping_helpers import attr_name_to_p
+from .mapping.mapping_helpers import attr_name_to_p, find_one_of_state
 
 class MdibStructureError(Exception):
     pass
@@ -21,17 +21,19 @@ class MessageReader(object):
         self._log_prefix = log_prefix
 
     def read_get_mdib_response(self, response: sdc_messages_pb2.GetMdibResponse) -> tuple[list[AbstractDescriptorContainer], list[AbstractStateContainer]]:
-        descriptors = self.readMdDescription(response.payload.mdib.md_description, self)
+        descriptors = self.read_md_description(response.payload.mdib.md_description, self)
         descr_by_handle = {d.Handle:d for d in descriptors}
         states = []
         for p_state_one_of in response.payload.mdib.md_state.state:
-            p_state = sm.find_one_of_state(p_state_one_of)
+            p_state = find_one_of_state(p_state_one_of)
             descr_handle = sm.p_get_attr_value(p_state, 'DescriptorHandle').string
-            descr = descr_by_handle[descr_handle]
+            try:
+                descr = descr_by_handle[descr_handle]
+            except:
+                raise
             state = sm.generic_state_from_p(p_state, descr)
             states.append(state)
         return descriptors, states
-
 
     @staticmethod
     def _read_abstract_complex_device_component_descriptor_children(p_descr, mdib):
@@ -62,7 +64,7 @@ class MessageReader(object):
                 ret.append(alert_condition)
         return ret
 
-    def readMdDescription(self, p_md_description_msg, mdib) -> List[AbstractDescriptorContainer]:
+    def read_md_description(self, p_md_description_msg, mdib) -> List[AbstractDescriptorContainer]:
         ret = []
         for p_mds in p_md_description_msg.mds:
             parent_handle = None
@@ -100,6 +102,10 @@ class MessageReader(object):
                 p_clock = p_mds.clock
                 clock_descriptor = dm.generic_descriptor_from_p(p_clock, mds.Handle)
                 ret.append(clock_descriptor)
+            for p_batt in p_mds.battery:
+                battery = dm.generic_descriptor_from_p(p_batt, mds.Handle)
+                ret.append(battery)
+
             ret.extend(self._read_abstract_complex_device_component_descriptor_children(p_mds, mdib))
         return ret
 
@@ -107,9 +113,9 @@ class MessageReader(object):
     def read_states(p_states: list[AbstractStateOneOfMsg], mdib):
         ret = []
         for p_state_one_of in p_states:
-            p_state = sm.find_one_of_state(p_state_one_of)
+            p_state = find_one_of_state(p_state_one_of)
             descr_handle = sm.p_get_attr_value(p_state, 'DescriptorHandle').string
-            descr = mdib.descriptions.handle.get_one(descr_handle)
+            descr = None if mdib is None else mdib.descriptions.handle.get_one(descr_handle)
             state = sm.generic_state_from_p(p_state, descr)
             ret.append(state)
         return ret

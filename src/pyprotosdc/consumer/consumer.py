@@ -1,106 +1,115 @@
+from __future__ import annotations
+
 import logging
+from typing import TYPE_CHECKING
 
 import grpc
-from org.somda.protosdc.proto.model import sdc_services_pb2_grpc, sdc_messages_pb2
-from org.somda.protosdc.proto.model.biceps import setvalue_pb2, abstractset_pb2
 from sdc11073 import observableproperties as properties
 from sdc11073.definitions_sdc import SdcV1Definitions
 
-from pyprotosdc.consumer.serviceclients.getservice import GetService_Wrapper
-from pyprotosdc.consumer.serviceclients.setservice import SetService_Wrapper
-from .mdibreportingservice import MdibReportingService_Wrapper, EpisodicReportData
+from pyprotosdc.consumer.serviceclients.getservice import GetServiceWrapper
+from pyprotosdc.consumer.serviceclients.setservice import SetServiceWrapper
+from pyprotosdc.consumer.serviceclients.mdibreportingservice import MdibReportingServiceWrapper, EpisodicReportData
 from .operations import GOperationsManager
 from ..msgreader import MessageReader
+
+if TYPE_CHECKING:
+    from sdc11073.certloader import SSLContextContainer
+    from pyprotosdc.discovery.service import Service
+    from org.somda.protosdc.proto.model.sdc_messages_pb2 import OperationInvokedReportStream
 
 
 class GSdcConsumer:
     # the following observables can be used to observe the incoming notifications by message type.
     # They contain only the body node of the notification, not the envelope
-    waveFormReport = properties.ObservableProperty()
-    episodicMetricReport = properties.ObservableProperty()
-    episodicMetricStates = properties.ObservableProperty()
-    episodicAlertReport = properties.ObservableProperty()
-    episodicComponentReport = properties.ObservableProperty()
-    episodicOperationalStateReport = properties.ObservableProperty()
-    episodicContextReport = properties.ObservableProperty()
-    descriptionModificationReport = properties.ObservableProperty()
-    operationInvokedReport = properties.ObservableProperty()
-    anyReport = properties.ObservableProperty()  # all reports can be observed here
+    waveform_report = properties.ObservableProperty()
+    episodic_metric_report = properties.ObservableProperty()
+    episodic_alert_report = properties.ObservableProperty()
+    episodic_component_report = properties.ObservableProperty()
+    episodic_operational_state_report = properties.ObservableProperty()
+    episodic_context_report = properties.ObservableProperty()
+    description_modification_report = properties.ObservableProperty()
+    operation_invoked_report = properties.ObservableProperty()
 
-    def __init__(self, ip):
+    subscription_end_data: properties.ObservableProperty()
+    system_error_report: properties.ObservableProperty()
+
+    any_report = properties.ObservableProperty()  # all reports can be observed here
+
+    def __init__(self, ip, ssl_context_container: SSLContextContainer | None = None):
+        self._ssl_context_container = ssl_context_container
+        # Todo: create a secure channel if ssl_context_container is not None
         self.channel = grpc.insecure_channel(ip)
         self.sdc_definitions = SdcV1Definitions
         self.log_prefix = ''
         self._logger = logging.getLogger('sdc.client')
         self.msg_reader = MessageReader(self._logger)
-
-        self._clients = {
-            "Get": GetService_Wrapper(self.channel, self.msg_reader),
-            "Set": SetService_Wrapper(self.channel, self.msg_reader),
-            "Event": MdibReportingService_Wrapper(self.channel, self.msg_reader)
-        }
-
-        properties.bind(self.client("Event"), episodic_report=self._on_episodic_report)
-        properties.bind(self.client("Set"), operation_invoked_report=self._on_operation_invoked_report)
-        self.all_subscribed = False
+        self.get_service = GetServiceWrapper(self.channel, self.msg_reader)
+        self.set_service = SetServiceWrapper(self.channel, self.msg_reader)
+        self._event_service = MdibReportingServiceWrapper(self.channel, self.msg_reader)
 
         # start operationInvoked subscription and tell all
         self._operations_manager = GOperationsManager(self.log_prefix)
 
-        for client in self._clients.values():
+        properties.bind(self._event_service, episodic_report=self._on_episodic_report)
+        properties.bind(self.set_service, operation_invoked_report=self._on_operation_invoked_report)
+        self.all_subscribed = False
+
+
+        for client in (self.get_service, self.set_service, self._event_service):
             if hasattr(client, 'set_operations_manager'):
                 client.set_operations_manager(self._operations_manager)
 
-    def client(self, name):
-        return self._clients[name]
-
     def subscribe_all(self):
-        service = self.client('Event')
-        service.EpisodicReport()  # starts a background thread to receive stream data
-        service = self.client('Set')
-        service.OperationInvokedReport()  # starts a background thread to receive stream data
+        self._event_service.EpisodicReport()  # starts a background thread to receive stream data
+        self.set_service.OperationInvokedReport()  # starts a background thread to receive stream data
         self.all_subscribed = True
 
+    def unsubscribe_all(self) -> bool:
+        # Todo: How does this work?
+        return True
+
     def _on_episodic_report(self, episodic_report_data: EpisodicReportData):
-        print('_on_episodic_report')
-        self.anyReport = episodic_report_data
+        """provide data via the usual observables."""
+        self.any_report = episodic_report_data
         if episodic_report_data.action == SdcV1Definitions.Actions.Waveform:
-            self.waveFormReport = episodic_report_data
+            self.waveform_report = episodic_report_data
         elif episodic_report_data.action == SdcV1Definitions.Actions.EpisodicAlertReport:
-            self.episodicAlertReport = episodic_report_data
+            self.episodic_alert_report = episodic_report_data
         elif episodic_report_data.action == SdcV1Definitions.Actions.EpisodicComponentReport:
-            self.episodicComponentReport = episodic_report_data
+            self.episodic_component_report = episodic_report_data
         elif episodic_report_data.action == SdcV1Definitions.Actions.EpisodicContextReport:
-            self.episodicContextReport = episodic_report_data
+            self.episodic_context_report = episodic_report_data
         elif episodic_report_data.action == SdcV1Definitions.Actions.DescriptionModificationReport:
-            self.descriptionModificationReport = episodic_report_data
+            self.description_modification_report = episodic_report_data
         elif episodic_report_data.action == SdcV1Definitions.Actions.EpisodicMetricReport:
-            self.episodicMetricReport = episodic_report_data
+            self.episodic_metric_report = episodic_report_data
         elif episodic_report_data.action == SdcV1Definitions.Actions.EpisodicOperationalStateReport:
-            self.episodicOperationalStateReport = episodic_report_data
+            self.episodic_operational_state_report = episodic_report_data
         else:
             raise ValueError(f'_on_episodic_report: dont know how to handle {episodic_report_data.action}')
 
-    def _on_operation_invoked_report(self, episodic_report):
+    def _on_operation_invoked_report(self, op_invoked_report_stream: OperationInvokedReportStream):
+        """provide data via the usual observables."""
+        op_invoked = op_invoked_report_stream.operation_invoked
         self._logger.info('_on_operation_invoked_report with %d report parts',
-                          len(episodic_report.operation_invoked.report_part))
-        self._operations_manager.on_operation_invoked_report(episodic_report.operation_invoked)
-        self.operationInvokedReport = episodic_report.operation_invoked
+                          len(op_invoked.report_part))
+        self._operations_manager.on_operation_invoked_report(op_invoked)
+        self.operation_invoked_report = op_invoked
 
+    @classmethod
+    def from_service(cls,
+                     service: Service,
+                     ssl_context_container: SSLContextContainer | None = None):
+        """Construct a GSdcConsumer from a Service.
 
-def run():
-    # NOTE(gRPC Python Team): .close() is possible on a channel and should be
-    # used in circumstances in which the with statement does not fit the needs
-    # of the code.
-    with grpc.insecure_channel('localhost:50051') as channel:
-        request = sdc_messages_pb2.SetValueRequest(payload=setvalue_pb2.SetValueMsg(
-            requested_numeric_value='42',
-            abstract_set=abstractset_pb2.AbstractSetMsg(operation_handle_ref='abc')))
-        s_stub = sdc_services_pb2_grpc.SetServiceStub(channel)
-        response2 = s_stub.SetValue(request)
-    print("s_stub client received: " + response2.payload)
+        :param service: a Service instance
+        :param ssl_context_container: a ssl context or None
+        :return:
+        """
+        device_locations = service.x_addrs
+        if not device_locations:
+            raise RuntimeError(f'discovered Service has no address! {service}')
+        device_location = device_locations[0]
+        return cls(device_location, ssl_context_container)
 
-
-if __name__ == '__main__':
-    logging.basicConfig()
-    run()

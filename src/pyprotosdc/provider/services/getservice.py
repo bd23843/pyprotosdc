@@ -3,13 +3,12 @@ from typing import TYPE_CHECKING
 import logging
 import traceback
 from collections import namedtuple
-import grpc
 
 from org.somda.protosdc.proto.model import sdc_services_pb2_grpc
-from org.somda.protosdc.proto.model.sdc_messages_pb2 import GetMdibResponse, GetMdDescriptionResponse, GetMdStateResponse
-
-from org.somda.protosdc.proto.model.biceps.mdib_pb2 import MdibMsg
-from org.somda.protosdc.proto.model.biceps.mddescription_pb2 import MdDescriptionMsg
+from org.somda.protosdc.proto.model.sdc_messages_pb2 import (GetMdibResponse,
+                                                             GetMdDescriptionResponse,
+                                                             GetMdStateResponse,
+                                                             GetContextStatesResponse)
 
 from sdc11073.xml_types import pm_qnames
 from pyprotosdc.mapping import descriptorsmapper as dm
@@ -33,18 +32,15 @@ def _alert_system_all_to_p(mdib, alert_system_descr, p_parent):
     dest_alert_system = p_parent.abstract_complex_device_component_descriptor.alert_system
     src_as_children = mdib.descriptions.parent_handle.get(alert_system_descr.Handle)
     for src_as_child in src_as_children:
-        # dest_as_child = dm.generic_descriptor_to_p(src_as_child, None)
         if src_as_child.NODETYPE == pm_qnames.AlertSignalDescriptor:
             dest_as_child = dest_alert_system.alert_signal.add()
             dm.generic_descriptor_to_p(src_as_child, dest_as_child)
-            #dest_alert_system.alert_signal.append(dest_as_child)
             src_asd_children = mdib.descriptions.parent_handle.get(src_as_child.Handle, [])
             for src_asd_child in src_asd_children:
                 raise RuntimeError(f'handling of {src_asd_child.NODETYPE.localname} not implemented')
         elif src_as_child.NODETYPE in (pm_qnames.AlertConditionDescriptor, pm_qnames.LimitAlertConditionDescriptor):
             dest_as_child = dest_alert_system.alert_condition.add()
             dm.generic_descriptor_to_p(src_as_child, dest_as_child)
-            # dest_alert_system.alert_condition.append(dest_as_child)
             src_asd_children = mdib.descriptions.parent_handle.get(src_as_child.Handle, [])
             for src_asd_child in src_asd_children:
                 raise RuntimeError(
@@ -59,26 +55,20 @@ def _sco_all_to_p(mdib, sco_descr, p_parent):
     src_sco_children = mdib.descriptions.parent_handle.get(sco_descr.Handle, [])
     dest_sco = p_parent.abstract_complex_device_component_descriptor.sco
     for src_sco_child in src_sco_children:
-        # dest_sco_child = dm.generic_descriptor_to_p(src_sco_child, None)
-        # dest_sco.operation.append(dest_sco_child)
         dest_sco_child = dest_sco.operation.add()
         dm.generic_descriptor_to_p(src_sco_child, dest_sco_child)
 
 
 def _mdib_to_p(mdib, p_mds_list, p_state_list):
-    #mds_dest = get_mdib_response.payload.mdib.md_description.mds
     src_mds_list = mdib.descriptions.NODETYPE.get(pm_qnames.MdsDescriptor)
     for scr_mds in src_mds_list:
         p_mds = p_mds_list.add()  # this creates a new entry in list with correct type
         _mds_to_p(mdib, scr_mds, p_mds)
     _md_state_to_p(mdib.states.objects, p_state_list)
-    # for stateContainer in mdib.states.objects:
-    #     abstract_state_one_of_msg = p_state_list.add()
-    #     sm.generic_state_to_p(stateContainer, abstract_state_one_of_msg)
 
 
 def _md_state_to_p(state_container_list, p_state_list):
-    for stateContainer in state_container_list: #mdib.states.objects:
+    for stateContainer in state_container_list:
         abstract_state_one_of_msg = p_state_list.add()
         sm.generic_state_to_p(stateContainer, abstract_state_one_of_msg)
 
@@ -93,7 +83,6 @@ def _mds_to_p(mdib, scr_mds, p_mds):
             src_vmd = mds_child  # give it a better name for code readability
             dest_vmd = p_mds.vmd.add()
             dm.generic_descriptor_to_p(src_vmd, dest_vmd)
-            # p_mds.vmd.append(dest_vmd)
             src_vmd_children = mdib.descriptions.parent_handle.get(src_vmd.Handle, [])
             for src_vmd_child in src_vmd_children:
                 if src_vmd_child.NODETYPE == pm_qnames.ChannelDescriptor:
@@ -149,6 +138,17 @@ def _mds_to_p(mdib, scr_mds, p_mds):
             for src_clk_child in src_clk_children:
                 raise RuntimeError(
                     f'handling of {src_clk_child.NODETYPE.localname} not implemented')
+        elif mds_child.NODETYPE == pm_qnames.BatteryDescriptor:
+            src_batt = mds_child  # give it a better name for code readability
+            # battery is a list, src_batt is only one member of it.
+            # => add an entry  to p_mds.battery and copy data to it
+            dm.generic_descriptor_to_p(src_batt,
+                                       p_mds.battery.add())
+            src_bat_children = mdib.descriptions.parent_handle.get(src_batt.Handle, [])
+            for src_bat_child in src_bat_children:
+                raise RuntimeError(
+                    f'handling of {src_bat_child.NODETYPE.localname} not implemented')
+
         else:
             raise RuntimeError(f'handling of {mds_child.NODETYPE.localname} not implemented')
 
@@ -175,9 +175,6 @@ class GetService(sdc_services_pb2_grpc.GetServiceServicer):
             name = attr_name_to_p('InstanceId')
             if mdib_version_group_msg.HasField(name):
                 getattr(mdib_version_group_msg, name).value = self._mdib.instance_id
-
-            # response.payload.mdib.a_mdib_version_group.a_mdib_version.value = self._mdib.mdibVersion
-            # response.payload.mdib.a_mdib_version_group.a_sequence_id = self._mdib.sequenceId
             return response
         except:
             print(traceback.format_exc())
@@ -207,6 +204,21 @@ class GetService(sdc_services_pb2_grpc.GetServiceServicer):
                 states = [self._mdib.states.descriptor_handle.get_one(h.string) for h in requested_handles]
             response = GetMdStateResponse()
             _md_state_to_p(states, response.payload.md_state.state)
+            return response
+        except:
+            print(traceback.format_exc())
+            self._logger.error(traceback.format_exc())
+            raise
+
+    def GetContextStates(self, request, context):
+        try:
+            requested_handles = request.payload.handle_ref
+            if not requested_handles:
+                states = self._mdib.context_states.objects
+            else:
+                states = [self._mdib.context_states.descriptor_handle.get_one(h.string) for h in requested_handles]
+            response = GetContextStatesResponse()
+            _md_state_to_p(states, response.payload.context_state)
             return response
         except:
             print(traceback.format_exc())

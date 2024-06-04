@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import traceback
+import uuid
 from typing import TYPE_CHECKING
 
 from org.somda.protosdc.proto.model import sdc_messages_pb2
@@ -17,7 +18,7 @@ from pyprotosdc.mapping.mapping_helpers import attr_name_to_p
 
 if TYPE_CHECKING:
     from enum import Enum
-    from .provider import GSdcDevice
+    from pyprotosdc.provider.provider import GSdcDevice
     from sdc11073.provider.operations import OperationDefinitionProtocol
     from sdc11073.mdib.mdibbase import MdibVersionGroup
 
@@ -34,9 +35,10 @@ def set_method(response):
                 transaction_id = self._provider.generate_transaction_id()
                 invocation_info = response.payload.abstract_set_response.invocation_info
                 invocation_info.transaction_id.unsigned_int = transaction_id
-
                 op_handle = request.payload.abstract_set.operation_handle_ref.string
                 operation = self._provider.get_operation_by_handle(op_handle)
+                response.addressing.relates_id.value = request.addressing.message_id
+                response.addressing.message_id = uuid.uuid4().urn
                 if operation is not None:
                     return f(self, operation, transaction_id, response, request, context)
                 else:
@@ -65,29 +67,13 @@ class SetService(sdc_services_pb2_grpc.SetServiceServicer):
         self._mdib = provider.mdib
         self._logger = logging.getLogger('sdc.grpc.dev.SetService')
 
-    def notify_operation(self,
-                         operation: OperationDefinitionProtocol,
-                         transaction_id: int,
-                         invocation_state: Enum,
-                         mdib_version_group: MdibVersionGroup,
-                         operation_target: str | None = None,
-                         error: Enum | None = None,
-                         error_message: str | None = None):
-        self._provider.subscriptions_manager.send_operation_invoked_report(operation,
-                                                                           transaction_id,
-                                                                           invocation_state,
-                                                                           mdib_version_group,
-                                                                           operation_target,
-                                                                           error,
-                                                                           error_message)
-
     @set_method(sdc_messages_pb2.ActivateResponse())
     def Activate(self,
                  operation,
                  transaction_id,
                  response: sdc_messages_pb2.ActivateResponse,
                  request: sdc_messages_pb2.ActivateRequest,
-                 context):
+                 context) -> sdc_messages_pb2.ActivateResponse:
 
         # convert proto arguments to pm arguments
         pm_activate = msg_types.Activate()
@@ -101,6 +87,8 @@ class SetService(sdc_services_pb2_grpc.SetServiceServicer):
                           operation.handle, transaction_id, pm_invocation_state)
         invocation_info = response.payload.abstract_set_response.invocation_info
         enum_attr_to_p(pm_invocation_state.value, invocation_info.invocation_state)
+        response.addressing.action = SdcV1Definitions.Actions.ActivateResponse
+
         return response
 
     @set_method(sdc_messages_pb2.SetMetricStateResponse())
@@ -109,7 +97,7 @@ class SetService(sdc_services_pb2_grpc.SetServiceServicer):
                        transaction_id,
                        response: sdc_messages_pb2.SetMetricStateResponse,
                        request: sdc_messages_pb2.SetMetricStateRequest,
-                       context):
+                       context) -> sdc_messages_pb2.SetMetricStateResponse:
         args = list(request.payload.proposed_metric_state)
         proposed_states = self._provider.msg_reader.read_states(args, self._mdib)
         pm_argument = msg_types.SetMetricState()
@@ -129,9 +117,9 @@ class SetService(sdc_services_pb2_grpc.SetServiceServicer):
     def SetComponentState(self,
                           operation,
                           transaction_id,
-                          response: sdc_messages_pb2.SetMetricStateResponse,
-                          request: sdc_messages_pb2.SetMetricStateRequest,
-                          context):
+                          response: sdc_messages_pb2.SetComponentStateResponse,
+                          request: sdc_messages_pb2.SetComponentStateRequest,
+                          context) -> sdc_messages_pb2.SetComponentStateResponse:
         args = list(request.payload.proposed_component_state)
         proposed_states = self._provider.msg_reader.read_states(args, self._mdib)
         pm_argument = msg_types.SetComponentState()
@@ -153,8 +141,8 @@ class SetService(sdc_services_pb2_grpc.SetServiceServicer):
                         transaction_id,
                         response: sdc_messages_pb2.SetContextStateResponse,
                         request: sdc_messages_pb2.SetContextStateRequest,
-                        context):
-        args = list(request.payload.proposed_component_state)
+                        context) -> sdc_messages_pb2.SetContextStateResponse:
+        args = list(request.payload.proposed_context_state)
         proposed_states = self._provider.msg_reader.read_states(args, self._mdib)
         pm_argument = msg_types.SetComponentState()
         pm_argument.ProposedComponentState.extend(proposed_states)
@@ -175,7 +163,7 @@ class SetService(sdc_services_pb2_grpc.SetServiceServicer):
                       transaction_id,
                       response: sdc_messages_pb2.SetAlertStateResponse,
                       request: sdc_messages_pb2.SetAlertStateRequest,
-                      context):
+                      context) -> sdc_messages_pb2.SetAlertStateResponse:
         args = list(request.payload.proposed_component_state)
         proposed_states = self._provider.msg_reader.read_states(args, self._mdib)
         pm_argument = msg_types.SetComponentState()
@@ -197,7 +185,7 @@ class SetService(sdc_services_pb2_grpc.SetServiceServicer):
                   transaction_id,
                   response: sdc_messages_pb2.SetStringResponse,
                   request: sdc_messages_pb2.SetStringRequest,
-                  context):
+                  context) -> sdc_messages_pb2.SetStringResponse:
         value = request.payload.requested_string_value
         pm_argument = msg_types.SetString()
         pm_argument.RequestedStringValue = value
@@ -214,9 +202,9 @@ class SetService(sdc_services_pb2_grpc.SetServiceServicer):
     def SetValue(self,
                  operation,
                  transaction_id,
-                 response: sdc_messages_pb2.SetStringResponse,
+                 response: sdc_messages_pb2.SetValueResponse,
                  request: sdc_messages_pb2.SetValueRequest,
-                 context):
+                 context) -> sdc_messages_pb2.SetValueResponse:
 
         p_value = request.payload.requested_numeric_value
         pm_value = decimal_from_p(p_value)
@@ -238,7 +226,7 @@ class SetService(sdc_services_pb2_grpc.SetServiceServicer):
         self._logger.debug('OperationInvokedReport called')
         subscription = self._provider.subscriptions_manager.on_subscribe_request(actions)
         _run = True
-        while (_run):
+        while _run:
             report = subscription.reports.get()
             if report == 'stop':
                 _run = False
@@ -246,4 +234,4 @@ class SetService(sdc_services_pb2_grpc.SetServiceServicer):
             else:
                 self._logger.info('yield OperationInvokedReport %s', report.__class__.__name__)
                 yield report
-                self._logger.info('yield OperationInvokedReport done')
+                # self._logger.info('yield OperationInvokedReport done')

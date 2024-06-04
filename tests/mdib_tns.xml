@@ -60,6 +60,9 @@ MdibVersion="5795" SequenceId="urn:uuid:4ed313b2-f925-418a-8476-6f3b4d06ee3e" In
 					<Operation xsi:type="SetContextStateOperationDescriptor" OperationTarget="PC.mds0" Handle="opSetPatCtx" DescriptorVersion="0">
 						<ns2:Extension/>
 					</Operation>
+					<Operation xsi:type="SetComponentStateOperationDescriptor" OperationTarget="ch0.vmd0" Handle="opSetCh" DescriptorVersion="0">
+						<ns2:Extension/>
+					</Operation>
 				</Sco>
 				<MetaData/>
 				<SystemContext Handle="SC.mds0" DescriptorVersion="0">

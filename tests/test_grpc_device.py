@@ -1,21 +1,24 @@
+import logging
 import traceback
 import unittest
-import logging
-from tests.test_grpc_client_device import SomeProvider
+import uuid
+from math import isclose
+
 from org.somda.protosdc.proto.model import sdc_messages_pb2
 from org.somda.protosdc.proto.model.biceps.handleref_pb2 import HandleRefMsg
-
-from pyprotosdc.msgreader import MessageReader
-from pyprotosdc.mapping.mapping_helpers import attr_name_to_p
-
-from sdc11073.mdib.mdibbase import MdibBase
-from sdc11073.definitions_sdc import SdcV1Definitions
 from sdc11073 import loghelper
-from sdc11073.xml_types import pm_types
+from sdc11073.definitions_sdc import SdcV1Definitions
 from sdc11073.loghelper import basic_logging_setup
+from sdc11073.mdib.mdibbase import MdibBase
+from sdc11073.xml_types import pm_types
+
+from pyprotosdc.discovery.discoveryimpl import GDiscovery
+from pyprotosdc.mapping.mapping_helpers import attr_name_to_p
+from pyprotosdc.msgreader import MessageReader
+from tests.test_grpc_client_device import SomeProvider
 
 
-def diff(a: pm_types.PropertyBasedPMType, b:pm_types.PropertyBasedPMType) ->dict:
+def diff(a: pm_types.PropertyBasedPMType, b: pm_types.PropertyBasedPMType) -> dict:
     ret = {}
     for name, dummy in a.sorted_container_properties():
         try:
@@ -32,15 +35,23 @@ def diff(a: pm_types.PropertyBasedPMType, b:pm_types.PropertyBasedPMType) ->dict
     return ret
 
 
-class Test_SomeDevice_GRPC(unittest.TestCase):
+class TestSomeDeviceGRPC(unittest.TestCase):
     def setUp(self) -> None:
         basic_logging_setup()
         self.wsd = None
-        self.sdc_device = SomeProvider.from_mdib_file(self.wsd, None, 'mdib_two_mds.xml', log_prefix='<Final> ')
-        self.sdc_device._mdib.mdibVersion = 42 # start with some non-default value
+        ip_address = '127.0.0.1'
+        self.provider_epr = uuid.uuid4().urn
+        self.wsd = GDiscovery(ip_address)
+        self.wsd.start()
+        self.sdc_device = SomeProvider.from_mdib_file(self.wsd, self.provider_epr, 'mdib_two_mds.xml')
+        self.sdc_device._mdib.mdibVersion = 42  # start with some non-default value
         self.sdc_device.start_all()
 
     def tearDown(self) -> None:
+        try:
+            self.wsd.stop()
+        except:
+            print(traceback.format_exc())
         try:
             self.sdc_device.stop_all()
         except:
@@ -57,8 +68,8 @@ class Test_SomeDevice_GRPC(unittest.TestCase):
         return [h for h in dev_handles if h not in cl_handles]
 
     def test_get_mdib(self):
-        getService = self.sdc_device.get_service
-        response = getService.GetMdib(None, None)
+        get_service = self.sdc_device.get_service
+        response = get_service.GetMdib(None, None)
         self.assertIsInstance(response, sdc_messages_pb2.GetMdibResponse)
         mdib_version_group_msg = getattr(response.payload.mdib, attr_name_to_p('MdibVersionGroup'))
         mdib_version = getattr(mdib_version_group_msg, attr_name_to_p('MdibVersion')).unsigned_long
@@ -73,14 +84,14 @@ class Test_SomeDevice_GRPC(unittest.TestCase):
             self.assertEqual(instance__id, self.sdc_device._mdib.instance_id)
 
     def test_get_mdib_msgreader(self):
-        getService = self.sdc_device.get_service
+        get_service = self.sdc_device.get_service
         request = sdc_messages_pb2.GetMdibRequest()
-        response = getService.GetMdib(request, None)
+        response = get_service.GetMdib(request, None)
         self.assertIsInstance(response, sdc_messages_pb2.GetMdibResponse)
-        reader = MessageReader(logger =logging.getLogger('unittest'))
+        reader = MessageReader(logger=logging.getLogger('unittest'))
         cl_mdib = MdibBase(SdcV1Definitions,
                            loghelper.get_logger_adapter('sdc.client.mdib'))
-        descriptors = reader.readMdDescription(response.payload.mdib.md_description, cl_mdib)
+        descriptors = reader.read_md_description(response.payload.mdib.md_description, cl_mdib)
         for d in descriptors:
             cl_mdib.descriptions.add_object_no_lock(d)
         missing_descr_handles = self._missing_descriptors(self.sdc_device._mdib, cl_mdib)
@@ -92,13 +103,13 @@ class Test_SomeDevice_GRPC(unittest.TestCase):
         self.assertEqual(len(missing_state_handles), 0)
 
     def test_get_md_description_msgreader(self):
-        getService = self.sdc_device.get_service
+        get_service = self.sdc_device.get_service
         request = sdc_messages_pb2.GetMdDescriptionRequest()
-        response = getService.GetMdDescription(request, None)
+        response = get_service.GetMdDescription(request, None)
         self.assertIsInstance(response, sdc_messages_pb2.GetMdDescriptionResponse)
         reader = MessageReader(logger=logging.getLogger('unittest'))
         cl_mdib = MdibBase(SdcV1Definitions, loghelper.get_logger_adapter('sdc.client.mdib'))
-        descriptors = reader.readMdDescription(response.payload.md_description, cl_mdib)
+        descriptors = reader.read_md_description(response.payload.md_description, cl_mdib)
         for d in descriptors:
             cl_mdib.descriptions.add_object_no_lock(d)
         missing_descr_handles = self._missing_descriptors(self.sdc_device._mdib, cl_mdib)
@@ -122,15 +133,15 @@ class Test_SomeDevice_GRPC(unittest.TestCase):
     def test_get_md_state_msgreader(self):
         reader = MessageReader(logger=logging.getLogger('unittest'))
         cl_mdib = MdibBase(SdcV1Definitions, loghelper.get_logger_adapter('sdc.client.mdib'))
-        getService = self.sdc_device.get_service
+        get_service = self.sdc_device.get_service
         # first get descriptors, otherwise states can't be instantiated
-        response = getService.GetMdDescription(None, None)
-        descriptors = reader.readMdDescription(response.payload.md_description, cl_mdib)
+        response = get_service.GetMdDescription(None, None)
+        descriptors = reader.read_md_description(response.payload.md_description, cl_mdib)
         for d in descriptors:
             cl_mdib.descriptions.add_object_no_lock(d)
         # get all states
         request = sdc_messages_pb2.GetMdStateRequest()
-        response = getService.GetMdState(request, None)
+        response = get_service.GetMdState(request, None)
         self.assertIsInstance(response, sdc_messages_pb2.GetMdStateResponse)
         states = reader.read_states(response.payload.md_state.state, cl_mdib)
         for st in states:
@@ -138,7 +149,7 @@ class Test_SomeDevice_GRPC(unittest.TestCase):
         missing_state_handles = self._missing_states(self.sdc_device._mdib, cl_mdib)
         self.assertEqual(len(missing_state_handles), 0)
 
-        #use handles parameter: try to read only two states, pick some random handles
+        # use handles parameter: try to read only two states, pick some random handles
         all_handles = list(cl_mdib.descriptions.handle.keys())
         handles = [all_handles[4], all_handles[40]]
 
@@ -147,12 +158,11 @@ class Test_SomeDevice_GRPC(unittest.TestCase):
             msg.string = handle
             request.payload.handle_ref.append(msg)
 
-        response = getService.GetMdState(request, None)
+        response = get_service.GetMdState(request, None)
         states = reader.read_states(response.payload.md_state.state, cl_mdib)
         self.assertEqual(len(states), 2)
         self.assertEqual(states[0].DescriptorHandle, handles[0])
         self.assertEqual(states[1].DescriptorHandle, handles[1])
-
 
     # def test_activate_valid_handle(self):
     #     reader = MessageReader(logger=logging.getLogger('unittest'))

@@ -10,16 +10,14 @@ from urllib.parse import quote_plus
 import grpc
 
 from org.somda.protosdc.proto.model import sdc_services_pb2_grpc
-from org.somda.protosdc.proto.model.discovery import discovery_messages_pb2, discovery_types_pb2, discovery_services_pb2
-from org.somda.protosdc.proto.model.common import common_types_pb2
 
-from .getservice import GetService
-from .setservice import SetService
-from .mdibreportingservice import MdibReportingService
+from pyprotosdc.provider.services.getservice import GetService
+from pyprotosdc.provider.services.setservice import SetService
+from pyprotosdc.provider.services.mdibreportingservice import MdibReportingService
 from . import subscriptionmgr
-from .localizationservice import LocalizationService
+from pyprotosdc.provider.services.localizationservice import LocalizationService
 from ..msgreader import MessageReader
-from .archiveservice import ArchiveService
+from pyprotosdc.provider.services.archiveservice import ArchiveService
 from sdc11073.intervaltimer import IntervalTimer
 from sdc11073.exceptions import ApiUsageError
 from .sco import ScoOperationsRegistry
@@ -54,6 +52,8 @@ class GSdcProvider(object):
                  socket_timeout: int | float | None = None,
                  log_prefix: str = '' ): #pylint:disable=too-many-arguments
         """Construct a GSdcProvider."""
+        if g_discovery is None:
+            raise ValueError('g_discovery is None')
         self._g_discovery = g_discovery
         self._log_prefix = log_prefix
         self._sslContext=None
@@ -66,7 +66,7 @@ class GSdcProvider(object):
         self._server_thread = None
         self._rtSampleSendThread = None
         self.collectRtSamplesPeriod = 0.1  # in seconds
-
+        self._x_addr: tuple[str, int] | None = None
         self._transaction_id = 0  # central transaction number handling for all called operations.
         self._transaction_id_lock = threading.Lock()
 
@@ -109,6 +109,7 @@ class GSdcProvider(object):
         self._server_thread = threading.Thread(target=self._serve, name='grpc_server')
         self._server_thread.daemon = True
         self._server_thread.start()
+        time.sleep(1)  # give it some time to start
 
         if startRealtimeSampleLoop:
             self.start_rt_sample_loop()
@@ -196,82 +197,46 @@ class GSdcProvider(object):
         sdc_services_pb2_grpc.add_ArchiveServiceServicer_to_server(self.archive_service, self._server)
         addrs = self._g_discovery.get_active_addresses()
         self._port_number = self._server.add_insecure_port(f'{addrs[0]}:0')
+        self._x_addr = (addrs[0], self._port_number)
         self._server.start()
         print('server started')
         self._server.wait_for_termination()
         print('server terminated')
 
-
-    def sendMetricStateUpdates(self, mdibVersion, stateUpdates):
-        self._logger.debug('sending metric state updates {}', stateUpdates)
-        self._subscriptions_manager.sendEpisodicMetricReport(stateUpdates, self._mdib.nsmapper, mdibVersion,
-                                                            self.mdib.sequenceId)
-
-    def sendAlertStateUpdates(self, mdibVersion, stateUpdates):
-        self._logger.debug('sending alert updates {}', stateUpdates)
-        self._subscriptions_manager.sendEpisodicAlertReport(stateUpdates, self._mdib.nsmapper, mdibVersion,
-                                                           self.mdib.sequenceId)
-
-    def sendComponentStateUpdates(self, mdibVersion, stateUpdates):
-        self._logger.debug('sending component state updates {}', stateUpdates)
-        self._subscriptions_manager.sendEpisodicComponentStateReport(stateUpdates, self._mdib.nsmapper, mdibVersion,
-                                                                    self.mdib.sequenceId)
-
-    def sendContextStateUpdates(self, mdibVersion, stateUpdates):
-        self._logger.debug('sending context updates {}', stateUpdates)
-        self._subscriptions_manager.sendEpisodicContextReport(stateUpdates, self._mdib.nsmapper, mdibVersion,
-                                                             self.mdib.sequenceId)
-
-    def sendOperationalStateUpdates(self, mdibVersion, stateUpdates):
-        self._logger.debug('sending operational state updates {}', stateUpdates)
-        self._subscriptions_manager.sendEpisodicOperationalStateReport(stateUpdates, self._mdib.nsmapper, mdibVersion,
-                                                                      self.mdib.sequenceId)
-
-    def sendRealtimeSamplesStateUpdates(self, mdibVersion, stateUpdates):
-        self._logger.debug('sending real time sample state updates {}', stateUpdates)
-        self._subscriptions_manager.sendRealtimeSamplesReport(stateUpdates, self._mdib.nsmapper, mdibVersion, self.mdib.sequenceId)
-
-    def sendDescriptorUpdates(self, mdibVersion, updated, created, deleted, updated_states):
-        self._logger.debug('sending descriptor updates updated={} created={} deleted={}', updated, created, deleted)
-        self._subscriptions_manager.sendDescriptorUpdates(updated, created, deleted, updated_states,
-                                                         self._mdib.nsmapper,
-                                                         mdibVersion,
-                                                         self.mdib.sequenceId)
-
-    def _waveform_updates_transaction(self, changedSamples):
-        '''
-        @param changedSamples: a dictionary with key = handle, value= devicemdib.RtSampleArray instance
-        '''
-        with self._mdib.mdibUpdateTransaction() as tr:
-            for descriptorHandle, changedSample in changedSamples.items():
-                determinationTime = changedSample.determinationTime
-                samples = [s[0] for s in changedSample.samples]  # only the values without the 'start of cycle' flags
-                activationState = changedSample.activationState
-                st = tr.getRealTimeSampleArrayMetricState(descriptorHandle)
-                if st.metricValue is None:
-                    st.mkMetricValue()
-                st.metricValue.Samples = samples
-                st.metricValue.DeterminationTime = determinationTime  # set Attribute
-                st.metricValue.Annotations = changedSample.annotations
-                st.metricValue.ApplyAnnotations = changedSample.applyAnnotations
-                st.ActivationState = activationState
-
-    def _rtSampleSendLoop(self):
-        time.sleep(0.1)  # start delayed in order to have a fully initialized device when waveforms start
-        timer = IntervalTimer(period_in_seconds=self.collectRtSamplesPeriod)
-        try:
-            while self._runRtSampleThread:
-                behind_schedule_seconds = timer.wait_next_interval_begin()
-                changed_samples = self._mdib.getUpdatedDeviceRtSamples()
-                if len(changed_samples) > 0:
-                    print(f'_rtSampleSendLoop with {len(changed_samples)} waveforms')
-                    #self._logWaveformTiming(behind_schedule_seconds)
-                    self._waveform_updates_transaction(changed_samples)
-                else:
-                    print('_rtSampleSendLoop no data')
-            print('_rtSampleSendLoop end')
-        except Exception as ex:
-            print(traceback.format_exc())
+    # def _waveform_updates_transaction(self, changedSamples):
+    #     '''
+    #     @param changedSamples: a dictionary with key = handle, value= devicemdib.RtSampleArray instance
+    #     '''
+    #     with self._mdib.mdibUpdateTransaction() as tr:
+    #         for descriptorHandle, changedSample in changedSamples.items():
+    #             determinationTime = changedSample.determinationTime
+    #             samples = [s[0] for s in changedSample.samples]  # only the values without the 'start of cycle' flags
+    #             activationState = changedSample.activationState
+    #             st = tr.getRealTimeSampleArrayMetricState(descriptorHandle)
+    #             if st.metricValue is None:
+    #                 st.mkMetricValue()
+    #             st.metricValue.Samples = samples
+    #             st.metricValue.DeterminationTime = determinationTime  # set Attribute
+    #             st.metricValue.Annotations = changedSample.annotations
+    #             st.metricValue.ApplyAnnotations = changedSample.applyAnnotations
+    #             st.ActivationState = activationState
+    #
+    # def _rtSampleSendLoop(self):
+    #     time.sleep(0.1)  # start delayed in order to have a fully initialized device when waveforms start
+    #     timer = IntervalTimer(period_in_seconds=self.collectRtSamplesPeriod)
+    #     try:
+    #         while self._runRtSampleThread:
+    #             behind_schedule_seconds = timer.wait_next_interval_begin()
+    #             changed_samples = self._mdib.getUpdatedDeviceRtSamples()
+    #             if len(changed_samples) > 0:
+    #                 print(f'_rtSampleSendLoop with {len(changed_samples)} waveforms')
+    #                 #self._logWaveformTiming(behind_schedule_seconds)
+    #                 self._waveform_updates_transaction(changed_samples)
+    #             else:
+    #                 print('_rtSampleSendLoop no data')
+    #         print('_rtSampleSendLoop end')
+    #     except Exception as ex:
+    #         print(traceback.format_exc())
 
 
     def set_location(self,
@@ -299,7 +264,7 @@ class GSdcProvider(object):
         """
         scopes = self._mk_scopes()
         xAddrs = self._get_xaddrs()
-        self._g_discovery.publish_service(self.epr, scopes, xAddrs)
+        self._g_discovery.publish_service(self.epr, scopes, [f'{self._x_addr[0]}:{self._x_addr[1]}'])
 
     def _mk_scopes(self) -> list[str]:
         scopes = []
@@ -353,9 +318,9 @@ class GSdcProvider(object):
                     scope_strings.add('sdc.cdc.type:/{}/{}/{}'.format(cs, csv, d.Type.Code))
         return scope_strings
 
-    def _get_xaddrs(self):
+    def _get_xaddrs(self) -> list[str]:
         srv = self._server
-        return [f'localhost:{self._port_number}'] # for now...
+        return [f'{self._x_addr[0]}:{self._x_addr[0]}']
         #xaddrs = self._server
 
     def _mk_subscription_manager(self, max_subscription_duration):
@@ -366,7 +331,7 @@ class GSdcProvider(object):
     def _mkScoOperationsRegistry(self, sco_descr):
         #Todo: set set_service and op_cls_getter
         op_cls_getter = get_operation_class
-        return ScoOperationsRegistry(self.set_service,
+        return ScoOperationsRegistry(self._subscriptions_manager,
                                          op_cls_getter,
                                          self._mdib,
                                          sco_descr,

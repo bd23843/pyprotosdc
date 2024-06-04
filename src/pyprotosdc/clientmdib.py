@@ -12,7 +12,7 @@ from pyprotosdc.mapping.basic_mappers import enum_attr_from_p
 from pyprotosdc.mapping.mapping_helpers import get_p_attr
 
 if TYPE_CHECKING:
-    from pyprotosdc.consumer.mdibreportingservice import EpisodicReportData
+    from pyprotosdc.consumer.serviceclients.mdibreportingservice import EpisodicReportData
     from pyprotosdc.consumer.consumer import GSdcConsumer
 
 LOG_WF_AGE_INTERVAL = 30  # how often a log message is written with mean and standard-deviation of waveforms age
@@ -39,7 +39,7 @@ class GClientMdibContainer(consumermdib.ConsumerMdib):
         # Otherwise we might miss notifications.
         self._bind_to_observables()
 
-        cl_get_service = self._sdc_client.client('Get')
+        cl_get_service = self._sdc_client.get_service
         self._logger.info('initializing mdib...')
         response = cl_get_service.get_mdib()
         self._logger.info('creating description containers...')
@@ -62,12 +62,6 @@ class GClientMdibContainer(consumermdib.ConsumerMdib):
             self.instance_id = mdib_version_group.instance_id
         self._logger.info('setting initial instance id to {}', mdib_version_group.instance_id)  # noqa: PLE1205
 
-        # retrieve context states only if there were none in mdibNode
-        if len(self.context_states.objects) == 0:
-            self._get_context_states()
-        else:
-            self._logger.info('found context states in GetMdib Result, will not call getContextStates')
-
         # process buffered notifications
         with self._buffered_notifications_lock:
             for buffered_report in self._buffered_notifications:
@@ -76,12 +70,9 @@ class GClientMdibContainer(consumermdib.ConsumerMdib):
             self._is_initialized = True
         self._logger.info('initializing mdib done')
 
-    def _get_context_states(self):
-        pass
-
     def _bind_to_observables(self):
         # observe properties of sdcClient
-        properties.bind(self._sdc_client, anyReport=self._on_any_report)
+        properties.bind(self._sdc_client, any_report=self._on_any_report)
 
     def _on_any_report(self, report: EpisodicReportData, is_buffered_report=False):
         handler_lookup = {Actions.Waveform: self._on_waveform_report,
@@ -90,8 +81,9 @@ class GClientMdibContainer(consumermdib.ConsumerMdib):
                           Actions.EpisodicComponentReport: self._on_episodic_component_report,
                           Actions.EpisodicContextReport: self._on_episodic_context_report,
                           Actions.DescriptionModificationReport: self._on_description_modification_report,
-                          # Actions.EpisodicOperationalStateReport: None
+                          Actions.EpisodicOperationalStateReport: self._on_episodic_operational_state_report
                           }
+        self.logger.debug('received report %s', report.action)
         handler = handler_lookup[report.action]
 
         if not self._can_accept_mdib_version('_on_any_report', report.mdib_version_group.mdib_version):
@@ -104,7 +96,6 @@ class GClientMdibContainer(consumermdib.ConsumerMdib):
             raise
 
     def _on_episodic_metric_report(self, report_data: EpisodicReportData, is_buffered_report):
-        print('_on_episodic_metric_report: process')
         now = time.time()
         metrics_by_handle = {}
         max_age = 0
@@ -172,7 +163,6 @@ class GClientMdibContainer(consumermdib.ConsumerMdib):
             self.metrics_by_handle = metrics_by_handle  # used by waitMetricMatches method
 
     def _on_episodic_alert_report(self, report_data: EpisodicReportData, is_buffered_report):
-        print('_on_episodic_alert_report: process')
         alert_by_handle = {}
         report = report_data.p_response.report
         try:
@@ -203,33 +193,32 @@ class GClientMdibContainer(consumermdib.ConsumerMdib):
                             self.states.update_object(old_state_container)
                             alert_by_handle[old_state_container.DescriptorHandle] = old_state_container
                     else:
-                        self.states.addObject(sc)
+                        self.states.add_object(sc)
                         alert_by_handle[sc.DescriptorHandle] = sc
         finally:
             self.alert_by_handle = alert_by_handle  # update observable
 
     def _on_waveform_report(self, report_data: EpisodicReportData, is_buffered_report):
-        print('_on_waveform_report: process')
         report = report_data.p_response.report
         waveform_by_handle = {}
         waveform_age = {}  # collect age of all waveforms in this report,
         # and make one report if age is above warn limit (instead of multiple)
         try:
-            all_states = report_data.msg_reader.read_states(report.state, self)
+            all_states = report_data.msg_reader.read_states(report.waveform.state, self)
 
             with self.mdib_lock:
                 self.mdib_version = report_data.mdib_version_group.mdib_version
                 if report_data.mdib_version_group.sequence_id != self.sequence_id:
                     self.sequence_id = report_data.mdib_version_group.sequence_id
                 for new_sac in all_states:
-                    d_handle = new_sac.descriptorHandle
-                    descriptor_container = new_sac.descriptorContainer
+                    d_handle = new_sac.DescriptorHandle
+                    descriptor_container = new_sac.descriptor_container
                     if descriptor_container is None:
                         self._logger.warn('_onWaveformReport: No Descriptor found for handle "{}"', d_handle)
 
-                    old_state_container = self.states.descriptorHandle.get_one(d_handle, allow_none=True)
+                    old_state_container = self.states.descriptor_handle.get_one(d_handle, allow_none=True)
                     if old_state_container is None:
-                        self.states.addObject(new_sac)
+                        self.states.add_object(new_sac)
                         current_sc = new_sac
                     else:
                         if self._has_new_state_usable_state_version(old_state_container, new_sac,
@@ -249,11 +238,11 @@ class GClientMdibContainer(consumermdib.ConsumerMdib):
                             except AttributeError:
                                 sample_period = 0  # default
                         rt_buffer = consumermdib.ConsumerRtBuffer(sample_period=sample_period,
-                                                                  max_samples=self._maxRealtimeSamples)
+                                                                  max_samples=self._max_realtime_samples)
                         self.rt_buffers[d_handle] = rt_buffer
                     # last_sc = rt_buffer.last_sc
-                    rt_sample_containers = rt_buffer.mkRtSampleContainers(new_sac)
-                    rt_buffer.addRtSampleContainers(rt_sample_containers)
+                    rt_sample_containers = rt_buffer.mk_rt_sample_containers(new_sac)
+                    rt_buffer.add_rt_sample_containers(rt_sample_containers)
 
                     # check age
                     if len(rt_sample_containers) > 0:
@@ -264,38 +253,37 @@ class GClientMdibContainer(consumermdib.ConsumerMdib):
                         self._logger.error('_onWaveformReport: descriptor {}: expect version "{}", found "{}"',
                                            d_handle, new_sac.DescriptorVersion, descriptor_container.DescriptorVersion)
 
-            if len(waveform_age) > 0:
-                min_age = min(waveform_age.values())
-                max_age = max(waveform_age.values())
-                shall_log = self.waveform_time_warner.getOutOfDeterminationTimeLogState(
-                    min_age, max_age, self.DETERMINATIONTIME_WARN_LIMIT)
-                if shall_log != A_NO_LOG:
-                    tmp = ', '.join('"{}":{:.3f}sec.'.format(k, v) for k, v in waveform_age.items())
-                    if shall_log == A_OUT_OF_RANGE:
-                        self._logger.warn(
-                            '_onWaveformReport mdibVersion {}: age of samples outside limit of {} sec.: age={}!',
-                            new_mdib_version, self.DETERMINATIONTIME_WARN_LIMIT, tmp)
-                    elif shall_log == A_STILL_OUT_OF_RANGE:
-                        self._logger.warn(
-                            '_onWaveformReport mdibVersion {}: age of samples still outside limit of {} sec.: age={}!',
-                            new_mdib_version, self.DETERMINATIONTIME_WARN_LIMIT, tmp)
-                    elif shall_log == A_BACK_IN_RANGE:
-                        self._logger.info(
-                            '_onWaveformReport mdibVersion {}: age of samples back in limit of {} sec.: age={}',
-                            new_mdib_version, self.DETERMINATIONTIME_WARN_LIMIT, tmp)
-            if LOG_WF_AGE_INTERVAL:
-                now = time.time()
-                if now - self._last_wf_age_log >= LOG_WF_AGE_INTERVAL:
-                    age_data = self.get_wf_age_stdev()
-                    self._logger.info('waveform mean age={:.1f}ms., std-dev={:.2f}ms. min={:.1f}ms., max={}',
-                                      age_data.mean_age * 1000., age_data.stdev * 1000.,
-                                      age_data.min_age * 1000., age_data.max_age * 1000.)
-                    self._last_wf_age_log = now
+            # if len(waveform_age) > 0:
+            #     min_age = min(waveform_age.values())
+            #     max_age = max(waveform_age.values())
+            #     shall_log = self.waveform_time_warner.getOutOfDeterminationTimeLogState(
+            #         min_age, max_age, self.DETERMINATIONTIME_WARN_LIMIT)
+            #     if shall_log != A_NO_LOG:
+            #         tmp = ', '.join('"{}":{:.3f}sec.'.format(k, v) for k, v in waveform_age.items())
+            #         if shall_log == A_OUT_OF_RANGE:
+            #             self._logger.warn(
+            #                 '_onWaveformReport mdibVersion {}: age of samples outside limit of {} sec.: age={}!',
+            #                 new_mdib_version, self.DETERMINATIONTIME_WARN_LIMIT, tmp)
+            #         elif shall_log == A_STILL_OUT_OF_RANGE:
+            #             self._logger.warn(
+            #                 '_onWaveformReport mdibVersion {}: age of samples still outside limit of {} sec.: age={}!',
+            #                 new_mdib_version, self.DETERMINATIONTIME_WARN_LIMIT, tmp)
+            #         elif shall_log == A_BACK_IN_RANGE:
+            #             self._logger.info(
+            #                 '_onWaveformReport mdibVersion {}: age of samples back in limit of {} sec.: age={}',
+            #                 new_mdib_version, self.DETERMINATIONTIME_WARN_LIMIT, tmp)
+            # if LOG_WF_AGE_INTERVAL:
+            #     now = time.time()
+            #     if now - self._last_wf_age_log >= LOG_WF_AGE_INTERVAL:
+            #         age_data = self.get_wf_age_stdev()
+            #         self._logger.info('waveform mean age={:.1f}ms., std-dev={:.2f}ms. min={:.1f}ms., max={}',
+            #                           age_data.mean_age * 1000., age_data.stdev * 1000.,
+            #                           age_data.min_age * 1000., age_data.max_age * 1000.)
+            #         self._last_wf_age_log = now
         finally:
             self.waveform_by_handle = waveform_by_handle
 
     def _on_episodic_component_report(self, report_data: EpisodicReportData, is_buffered_report):
-        print('_on_episodic_component_report: process')
         report = report_data.p_response.report
         component_by_handle = {}
         state_containers = []
@@ -332,8 +320,45 @@ class GClientMdibContainer(consumermdib.ConsumerMdib):
         finally:
             self.component_by_handle = component_by_handle
 
+    def _on_episodic_operational_state_report(self, report_data: EpisodicReportData, is_buffered_report):
+        report = report_data.p_response.report
+        operation_by_handle = {}
+        state_containers = []
+        for report_part in report.operational_state.abstract_operational_state_report.report_part:
+            state_containers.extend(report_data.msg_reader.read_states(report_part.operation_state, self))
+        try:
+            with self.mdib_lock:
+                self.mdib_version = report_data.mdib_version_group.mdib_version
+                if report_data.mdib_version_group.sequence_id != self.sequence_id:
+                    self.sequence_id = report_data.mdib_version_group.sequence_id
+                for sc in state_containers:
+                    desc_h = sc.DescriptorHandle
+                    try:
+                        old_state_container = self.states.descriptor_handle.get_one(desc_h, allow_none=True)
+                    except RuntimeError as ex:
+                        self._logger.error('_on_episodic_operational_state_report, get_one on states: {}', ex)
+                        continue
+
+                    if old_state_container is None:
+                        self.states.add_object(sc)
+                        self._logger.info(
+                            '_on_episodic_operational_state_report: new operational state handle = {} DescriptorVersion={}',
+                            desc_h, sc.DescriptorVersion)
+                        operation_by_handle[sc.descriptorHandle] = sc
+                    else:
+                        if self._has_new_state_usable_state_version(old_state_container, sc,
+                                                                    'EpisodicOperationalStateReport',
+                                                                    is_buffered_report):
+                            self._logger.info(
+                                '_on_episodic_operational_state_report: updated component state, handle="{}" DescriptorVersion={}',
+                                desc_h, sc.DescriptorVersion)
+                            old_state_container.update_from_other_container(sc)
+                            self.states.update_object(old_state_container)
+                            operation_by_handle[old_state_container.DescriptorHandle] = old_state_container
+        finally:
+            self.operation_by_handle = operation_by_handle
+
     def _on_episodic_context_report(self, report_data: EpisodicReportData, is_buffered_report):
-        print('_on_episodic_context_report: process')
         report = report_data.p_response.report
         context_by_handle = {}
         state_containers = []
@@ -370,7 +395,6 @@ class GClientMdibContainer(consumermdib.ConsumerMdib):
             self.context_by_handle = context_by_handle
 
     def _on_description_modification_report(self, report_data: EpisodicReportData, is_buffered_report):
-        print('_on_description_modification_report: process')
         report = report_data.p_response.report
 
         new_descriptor_by_handle = {}
@@ -382,20 +406,19 @@ class GClientMdibContainer(consumermdib.ConsumerMdib):
                 self.sequence_id = report_data.mdib_version_group.sequence_id
 
             for report_part in report.description.report_part:
-                descriptor_containers = report_data.msg_reader.read_descriptors(report_part.p_descriptor,
-                                                                                get_p_attr(report_part,
-                                                                                           'ParentDescriptor'),
-                                                                                self)
-                # report_part.a_parent_descriptor, self)
+                descriptor_containers = report_data.msg_reader.read_descriptors(
+                    report_part.p_descriptor,
+                    get_p_attr(report_part,'ParentDescriptor').string,
+                    self)
                 modification_type = enum_attr_from_p(report_part,
                                                      'ModificationType',
                                                      msg_types.DescriptionModificationType)
                 if modification_type == msg_types.DescriptionModificationType.CREATE:  # CRT
                     for dc in descriptor_containers:
-                        self.descriptions.addObject(dc)
+                        self.descriptions.add_object(dc)
                         self._logger.debug('_onDescriptionModificationReport: created description "{}" (parent="{}")',
-                                           dc.handle, dc.parentHandle)
-                        new_descriptor_by_handle[dc.handle] = dc
+                                           dc.Handle, dc.parent_handle)
+                        new_descriptor_by_handle[dc.Handle] = dc
                     state_containers = report_data.msg_reader.read_states(report_part.state, self)
                     for sc in state_containers:
                         # determine multikey
@@ -403,7 +426,7 @@ class GClientMdibContainer(consumermdib.ConsumerMdib):
                             multikey = self.context_states
                         else:
                             multikey = self.states
-                        multikey.addObject(sc)
+                        multikey.add_object(sc)
                 elif modification_type == msg_types.DescriptionModificationType.UPDATE:  # UPD
                     for dc in descriptor_containers:
                         self._logger.info('_onDescriptionModificationReport: update descriptor "{}" (parent="{}")',
@@ -430,11 +453,12 @@ class GClientMdibContainer(consumermdib.ConsumerMdib):
                 else:  # DEL
                     for dc in descriptor_containers:
                         self._logger.debug('_onDescriptionModificationReport: remove descriptor "{}" (parent="{}")',
-                                           dc.handle, dc.parentHandle)
+                                           dc.Handle, dc.parent_handle)
                         self.rm_descriptor_by_handle(
-                            dc.handle)  # handling of self.deletedDescriptorByHandle inside called method
+                            dc.Handle)  # handling of self.deletedDescriptorByHandle inside called method
                         deleted_descriptor_by_handle[dc.Handle] = dc
 
+                self.description_modifications = report
                 # write observables for every report part separately
                 if new_descriptor_by_handle:
                     self.new_descriptors_by_handle = new_descriptor_by_handle
