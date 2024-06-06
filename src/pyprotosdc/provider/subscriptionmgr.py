@@ -1,8 +1,7 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
 import uuid
-import time
-from collections import deque, defaultdict
+from collections import deque
 import queue
 from lxml import etree as etree_
 from sdc11073.etc import short_filter_string
@@ -16,19 +15,21 @@ from ..mapping.statesmapper import generic_state_to_p
 from ..mapping.descriptorsmapper import generic_descriptor_to_p
 from ..mapping.basic_mappers import enum_attr_to_p
 from ..mapping.msgtypes_mappers import set_mdib_version_group
-from ..mapping.mapping_helpers import get_p_attr
+from ..mapping.mapping_helpers import get_p_attr, find_one_of_p_for_container
 
 if TYPE_CHECKING:
     from org.somda.protosdc.proto.model.biceps.descriptionmodificationreport_pb2 import DescriptionModificationReportMsg
-    from sdc11073.provider.sco import OperationDefinition
+    from sdc11073.provider.sco import OperationDefinitionBase
     from sdc11073.mdib.mdibbase import MdibVersionGroup
+    from sdc11073.xml_types import msg_types
 
 MAX_ROUNDTRIP_VALUES = 20
+
 
 class _RoundTripData(object):
     def __init__(self, values, abs_max):
         if values:
-            self.values = list(values) # make a copy
+            self.values = list(values)  # make a copy
             self.min = min(values)
             self.max = max(values)
             self.avg = sum(values)/len(values)
@@ -113,9 +114,9 @@ class GDevSubscription(object):
     #     return self._is_closed
 
     def __repr__(self):
-        refIdent = '<unknown>'
+        ref_ident = '<unknown>'
         return 'Subscription(ref_idnt={}, my_idnt={}, filter={})'.format(
-            refIdent, self.my_identifier.text,
+            ref_ident, self.my_identifier.text,
             short_filter_string(self._filters))
 
     def get_roundtrip_stats(self):
@@ -146,7 +147,6 @@ class GSubscriptionsManager:
     def stop(self):
         for s in self._subscriptions.objects:
             s.close()
-
 
     def on_subscribe_request(self, action_strings: list[str]) -> GDevSubscription:
         s = GDevSubscription(self._max_subscription_duration, action_strings)
@@ -190,7 +190,7 @@ class GSubscriptionsManager:
         subscribers = self._getSubscriptionsForAction(action)
         if not subscribers:
             self._logger.debug('sending episodic operational state report: no subscribers')
-            return
+            # return
         self._logger.info('sending episodic operational state report to %d subscribers', len(subscribers))
         report = EpisodicReportStream()
         report.addressing.action = action.value
@@ -202,7 +202,8 @@ class GSubscriptionsManager:
         p_report_part = oneof_report.abstract_operational_state_report.report_part.add()
         p_report_part.abstract_report_part.source_mds.string = 'ToDo'
         for sc in states:
-            p_st = p_report_part.operation_state.add()
+            p_st_oneof = p_report_part.operation_state.add()
+            p_st = find_one_of_p_for_container(sc, p_st_oneof)
             generic_state_to_p(sc, p_st)
         for s in subscribers:
             s.send_notification_report(report)
@@ -267,7 +268,7 @@ class GSubscriptionsManager:
                                             'MdibVersionGroup')
         set_mdib_version_group(mdib_version_group_msg, mdib_version_group)
         for sc in states:
-            p_report_part = oneof_report.abstract_context_report.report_part.add() # ReportPartMsg
+            p_report_part = oneof_report.abstract_context_report.report_part.add()  # ReportPartMsg
             p_report_part.abstract_report_part.source_mds.string = 'ToDo'
             p_st = p_report_part.context_state.add()
             generic_state_to_p(sc, p_st)
@@ -294,7 +295,7 @@ class GSubscriptionsManager:
         for s in subscribers:
             s.send_notification_report(episodic_report_stream)
 
-    def _mkDescriptorUpdatesReportPart(self,
+    def _mk_descriptor_updates_report_part(self,
                                        report : DescriptionModificationReportMsg,
                                        modification_type: str, descriptors, updated_states):
         """ Helper that creates ReportPart."""
@@ -329,21 +330,21 @@ class GSubscriptionsManager:
                                             'MdibVersionGroup')
         set_mdib_version_group(mdib_version_group_msg, mdib_version_group)
 
-        self._mkDescriptorUpdatesReportPart(oneof_report, 'Upt', updated, updated_states)
-        self._mkDescriptorUpdatesReportPart(oneof_report, 'Crt', created, updated_states)
-        self._mkDescriptorUpdatesReportPart(oneof_report, 'Del', deleted, updated_states)
+        self._mk_descriptor_updates_report_part(oneof_report, 'Upt', updated, updated_states)
+        self._mk_descriptor_updates_report_part(oneof_report, 'Crt', created, updated_states)
+        self._mk_descriptor_updates_report_part(oneof_report, 'Del', deleted, updated_states)
 
         for s in subscribers:
             s.send_notification_report(report)
 
     def send_operation_invoked_report(self,
-                         operation: OperationDefinition,
-                         transaction_id: int,
-                         invocation_state: Enum,
-                         mdib_version_group: MdibVersionGroup,
-                         operation_target: str | None = None,
-                         error: Enum | None = None,
-                         error_message: str | None = None):
+                                      operation: OperationDefinitionBase,
+                                      transaction_id: int,
+                                      invocation_state: msg_types.InvocationState,
+                                      mdib_version_group: MdibVersionGroup,
+                                      operation_target: str | None = None,
+                                      error: msg_types.InvocationError | None = None,
+                                      error_message: str | None = None):
         action = OperationInvokedAction
         subscribers = self._getSubscriptionsForAction(action)
         if not subscribers:
@@ -352,7 +353,7 @@ class GSubscriptionsManager:
         self._logger.info('sending operation invoked to %d subscribers', len(subscribers))
 
         stream = OperationInvokedReportStream()
-        stream.addressing.action = action.value
+        stream.addressing.action = action
         stream.addressing.message_id = 'bernd'
         op_invoked = stream.operation_invoked
         mdib_version_group_msg = get_p_attr(op_invoked.abstract_report, 'MdibVersionGroup')
@@ -381,21 +382,21 @@ class GSubscriptionsManager:
         with self._subscriptions.lock:
             return [s for s in self._subscriptions.objects if s.matches(action)]
 
-    def _getSubscriptionforRequest(self, soapEnvelope):
-        request_name = soapEnvelope.bodyNode[0].tag
-        identifierNode = soapEnvelope.headerNode.find(GDevSubscription.IDENT_TAG, namespaces=nsmap)
-        if identifierNode is None:
-            raise RuntimeError('no Identifier found in {} ', request_name)
-        else:
-            identifier = identifierNode.text
-        with self._subscriptions.lock:
-            subscr = [s for s in self._subscriptions.objects if s.my_identifier.text == identifier]
-        if len(subscr) > 1:
-            raise RuntimeError('Have {} subscriptions with identifier "{}"!'.format(len(subscr), identifier))
-        elif len(subscr) == 0:
-            self._logger.error('on {}: unknown Subscription identifier "{}"', request_name, identifier)
-            return
-        return subscr[0]
+    # def _getSubscriptionforRequest(self, soapEnvelope):
+    #     request_name = soapEnvelope.bodyNode[0].tag
+    #     identifierNode = soapEnvelope.headerNode.find(GDevSubscription.IDENT_TAG, namespaces=nsmap)
+    #     if identifierNode is None:
+    #         raise RuntimeError('no Identifier found in {} ', request_name)
+    #     else:
+    #         identifier = identifierNode.text
+    #     with self._subscriptions.lock:
+    #         subscr = [s for s in self._subscriptions.objects if s.my_identifier.text == identifier]
+    #     if len(subscr) > 1:
+    #         raise RuntimeError('Have {} subscriptions with identifier "{}"!'.format(len(subscr), identifier))
+    #     elif len(subscr) == 0:
+    #         self._logger.error('on {}: unknown Subscription identifier "{}"', request_name, identifier)
+    #         return
+    #     return subscr[0]
 
     #
     # def getSubScriptionRoundtripTimes(self):
