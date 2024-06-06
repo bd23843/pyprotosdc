@@ -14,7 +14,8 @@ from sdc11073.xml_types import msg_types
 from pyprotosdc.mapping.basic_mappers import (enum_attr_to_p,
                                               string_value_to_p,
                                               decimal_from_p)
-from pyprotosdc.mapping.mapping_helpers import attr_name_to_p
+from pyprotosdc.mapping.mapping_helpers import attr_name_to_p, get_p_attr
+from pyprotosdc.mapping.msgtypes_mappers import set_mdib_version_group
 
 if TYPE_CHECKING:
     from enum import Enum
@@ -110,6 +111,9 @@ class SetService(sdc_services_pb2_grpc.SetServiceServicer):
                           operation.handle, transaction_id, pm_invocation_state)
         invocation_info = response.payload.abstract_set_response.invocation_info
         enum_attr_to_p(pm_invocation_state.value, invocation_info.invocation_state)
+        mdib_version_group_msg = get_p_attr(response.payload.abstract_set_response, 'MdibVersionGroup')
+        set_mdib_version_group(mdib_version_group_msg, self._mdib.mdib_version_group)
+
         self._logger.debug('SetMetricState called, transaction %d', transaction_id)
         return response
 
@@ -132,6 +136,10 @@ class SetService(sdc_services_pb2_grpc.SetServiceServicer):
                           operation.handle, transaction_id, pm_invocation_state)
         invocation_info = response.payload.abstract_set_response.invocation_info
         enum_attr_to_p(pm_invocation_state.value, invocation_info.invocation_state)
+
+        mdib_version_group_msg = get_p_attr(response.payload.abstract_set_response, 'MdibVersionGroup')
+        set_mdib_version_group(mdib_version_group_msg, self._mdib.mdib_version_group)
+
         self._logger.debug('SetComponentState called, transaction %d', transaction_id)
         return response
 
@@ -154,6 +162,10 @@ class SetService(sdc_services_pb2_grpc.SetServiceServicer):
                           operation.handle, transaction_id, pm_invocation_state)
         invocation_info = response.payload.abstract_set_response.invocation_info
         enum_attr_to_p(pm_invocation_state.value, invocation_info.invocation_state)
+
+        mdib_version_group_msg = get_p_attr(response.payload.abstract_set_response, 'MdibVersionGroup')
+        set_mdib_version_group(mdib_version_group_msg, self._mdib.mdib_version_group)
+
         self._logger.debug('SetContextState called, transaction %d', transaction_id)
         return response
 
@@ -176,6 +188,10 @@ class SetService(sdc_services_pb2_grpc.SetServiceServicer):
                           operation.handle, transaction_id, pm_invocation_state)
         invocation_info = response.payload.abstract_set_response.invocation_info
         enum_attr_to_p(pm_invocation_state.value, invocation_info.invocation_state)
+
+        mdib_version_group_msg = get_p_attr(response.payload.abstract_set_response, 'MdibVersionGroup')
+        set_mdib_version_group(mdib_version_group_msg, self._mdib.mdib_version_group)
+
         self._logger.debug('SetAlertState called, transaction %d', transaction_id)
         return response
 
@@ -195,6 +211,10 @@ class SetService(sdc_services_pb2_grpc.SetServiceServicer):
                                                                       transaction_id)
         invocation_info = response.payload.abstract_set_response.invocation_info
         enum_attr_to_p(pm_invocation_state.value, invocation_info.invocation_state)
+
+        mdib_version_group_msg = get_p_attr(response.payload.abstract_set_response, 'MdibVersionGroup')
+        set_mdib_version_group(mdib_version_group_msg, self._mdib.mdib_version_group)
+
         self._logger.debug('SetString called, transaction %d', transaction_id)
         return response
 
@@ -217,6 +237,10 @@ class SetService(sdc_services_pb2_grpc.SetServiceServicer):
         invocation_info = response.payload.abstract_set_response.invocation_info
 
         enum_attr_to_p(pm_invocation_state.value, invocation_info.invocation_state)
+
+        mdib_version_group_msg = get_p_attr(response.payload.abstract_set_response, 'MdibVersionGroup')
+        set_mdib_version_group(mdib_version_group_msg, self._mdib.mdib_version_group)
+
         self._logger.debug('SetValue called, transaction %d state = %s',
                            transaction_id, pm_invocation_state)
         return response
