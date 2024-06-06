@@ -58,10 +58,10 @@ class MetadataService(metadata_services_pb2_grpc.MetadataServiceServicer):
         response.metadata.model_url.value = self._provider.this_model.ModelUrl
 
         service = response.service.add()
-        service.type.append('org.somda.protosdc.proto.model.metadata.MetadataService')
-        service.type.append('org.somda.protosdc.proto.model.GetService')
-        service.type.append('org.somda.protosdc.proto.model.SetService')
-        service.type.append('org.somda.protosdc.proto.model.MdibReportingService')
+        service.type.append('org.somda.protosdc.service.metadata.Metadata')
+        service.type.append('org.somda.protosdc.service.Get')
+        service.type.append('org.somda.protosdc.service.Set')
+        service.type.append('org.somda.protosdc.service.MdibReporting')
 
         for address in addresses:
             uri = service.physical_address.add()

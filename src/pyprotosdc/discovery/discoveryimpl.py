@@ -204,7 +204,7 @@ class GDiscovery(threading.Thread):
                                 addr_from: tuple[str, int]):
         """Forward received message to specific handler (dispatch by action)."""
         action = received_message.addressing.action
-        self._logger.debug('handle_received_message: received %s from %s', action.split('/')[-1], addr_from)
+        self._logger.info('handle_received_message: received %s from %s', action.split('/')[-1], addr_from)
         lookup = {Actions.Hello: self._handle_received_hello,
                   Actions.SearchRequest: self._handle_received_search_request,
                   Actions.SearchResponse: self._handle_received_search_response,
