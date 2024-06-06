@@ -16,6 +16,7 @@ from pyprotosdc.mapping.basic_mappers import (enum_attr_to_p,
                                               decimal_from_p)
 from pyprotosdc.mapping.mapping_helpers import attr_name_to_p, get_p_attr
 from pyprotosdc.mapping.msgtypes_mappers import set_mdib_version_group
+from pyprotosdc.actions import OperationInvokedAction
 
 if TYPE_CHECKING:
     from enum import Enum
@@ -246,7 +247,7 @@ class SetService(sdc_services_pb2_grpc.SetServiceServicer):
         return response
 
     def OperationInvokedReport(self, request, context):
-        actions = [SdcV1Definitions.Actions.OperationInvokedReport]
+        actions = [OperationInvokedAction]
         self._logger.debug('OperationInvokedReport called')
         subscription = self._provider.subscriptions_manager.on_subscribe_request(actions)
         _run = True

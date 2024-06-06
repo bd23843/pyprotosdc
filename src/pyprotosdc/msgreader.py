@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from org.somda.protosdc.proto.model import sdc_services_pb2_grpc, sdc_messages_pb2
     from sdc11073.mdib.descriptorcontainers import AbstractDescriptorContainer
     from sdc11073.mdib.statecontainers import AbstractStateContainer
+    from pyprotosdc.clientmdib import GClientMdibContainer
 
 
 class MessageReader(object):
@@ -21,7 +22,7 @@ class MessageReader(object):
         self._log_prefix = log_prefix
 
     def read_get_mdib_response(self, response: sdc_messages_pb2.GetMdibResponse) -> tuple[list[AbstractDescriptorContainer], list[AbstractStateContainer]]:
-        descriptors = self.read_md_description(response.payload.mdib.md_description, self)
+        descriptors = self.read_md_description(response.payload.mdib.md_description)
         descr_by_handle = {d.Handle:d for d in descriptors}
         states = []
         for p_state_one_of in response.payload.mdib.md_state.state:
@@ -36,7 +37,7 @@ class MessageReader(object):
         return descriptors, states
 
     @staticmethod
-    def _read_abstract_complex_device_component_descriptor_children(p_descr, mdib):
+    def _read_abstract_complex_device_component_descriptor_children(p_descr):
         ret = []
         p_acdcd = p_descr.abstract_complex_device_component_descriptor
         attr_name = attr_name_to_p('Handle')
@@ -64,7 +65,7 @@ class MessageReader(object):
                 ret.append(alert_condition)
         return ret
 
-    def read_md_description(self, p_md_description_msg, mdib) -> List[AbstractDescriptorContainer]:
+    def read_md_description(self, p_md_description_msg) -> List[AbstractDescriptorContainer]:
         ret = []
         for p_mds in p_md_description_msg.mds:
             parent_handle = None
@@ -73,7 +74,7 @@ class MessageReader(object):
             for p_vmd in p_mds.vmd:
                 vmd = dm.generic_descriptor_from_p(p_vmd, mds.Handle)
                 ret.append(vmd)
-                ret.extend(self._read_abstract_complex_device_component_descriptor_children(p_vmd, mdib))
+                ret.extend(self._read_abstract_complex_device_component_descriptor_children(p_vmd))
                 for p_channel in p_vmd.channel:
                     channel = dm.generic_descriptor_from_p(p_channel, vmd.Handle)
                     ret.append(channel)
@@ -106,11 +107,11 @@ class MessageReader(object):
                 battery = dm.generic_descriptor_from_p(p_batt, mds.Handle)
                 ret.append(battery)
 
-            ret.extend(self._read_abstract_complex_device_component_descriptor_children(p_mds, mdib))
+            ret.extend(self._read_abstract_complex_device_component_descriptor_children(p_mds))
         return ret
 
     @staticmethod
-    def read_states(p_states: list[AbstractStateOneOfMsg], mdib):
+    def read_states(p_states: list[AbstractStateOneOfMsg], mdib: GClientMdibContainer | None) -> list[AbstractStateContainer]:
         ret = []
         for p_state_one_of in p_states:
             p_state = find_one_of_state(p_state_one_of)
@@ -121,7 +122,7 @@ class MessageReader(object):
         return ret
 
     @staticmethod
-    def read_descriptors(p_descriptors, parent_handle,  mdib):
+    def read_descriptors(p_descriptors, parent_handle):
         ret = []
         for p_descr in p_descriptors:
             descr = dm.generic_descriptor_from_p(p_descr, parent_handle)

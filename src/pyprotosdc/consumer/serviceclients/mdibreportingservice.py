@@ -5,22 +5,21 @@ import traceback
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from org.somda.protosdc.proto.model import sdc_services_pb2_grpc, sdc_messages_pb2
-from sdc11073.definitions_sdc import SdcV1Definitions
 from sdc11073 import  observableproperties
 from sdc11073.mdib.mdibbase import MdibVersionGroup
 
 from pyprotosdc.mapping.mapping_helpers import get_p_attr
 from pyprotosdc.mapping.msgtypes_mappers import get_mdib_version_group
-
+from pyprotosdc.actions import ReportAction
 if TYPE_CHECKING:
     from pyprotosdc.msgreader import MessageReader
-    from sdc11073.xml_types.actions import Actions
+    # from sdc11073.xml_types.actions import Actions
 
 
 @dataclass
 class EpisodicReportData:
     mdib_version_group: MdibVersionGroup
-    action: Actions
+    action: ReportAction
     p_response: sdc_messages_pb2.EpisodicReportStream
     msg_reader: MessageReader
 
@@ -42,15 +41,16 @@ class MdibReportingServiceWrapper:
     def _read_episodic_reports(self):
         """Method is executed in a thread."""
         request = sdc_messages_pb2.EpisodicReportRequest()
-        f = request.filter.action_filter.action
-        actions = [SdcV1Definitions.Actions.Waveform,
-                   SdcV1Definitions.Actions.DescriptionModificationReport,
-                   SdcV1Definitions.Actions.EpisodicMetricReport,
-                   SdcV1Definitions.Actions.EpisodicAlertReport,
-                   SdcV1Definitions.Actions.EpisodicContextReport,
-                   SdcV1Definitions.Actions.EpisodicComponentReport,
-                   SdcV1Definitions.Actions.EpisodicOperationalStateReport]
-        f.extend(actions)
+        # no filter means all
+        # f = request.filter.action_filter.action
+        # actions = [ReportAction.Waveform,
+        #            ReportAction.DescriptionModificationReport,
+        #            ReportAction.EpisodicMetricReport,
+        #            ReportAction.EpisodicAlertReport,
+        #            ReportAction.EpisodicContextReport,
+        #            ReportAction.EpisodicComponentReport,
+        #            ReportAction.EpisodicOperationalStateReport]
+        # f.extend(actions)
         for response in self._stub.EpisodicReport(request):
             try:
                 self.episodic_report = self._map_report(response)
@@ -64,31 +64,31 @@ class MdibReportingServiceWrapper:
         actual_report = getattr(report, which)
 
         if which == 'waveform':
-            action = SdcV1Definitions.Actions.Waveform
+            action = ReportAction.Waveform
             mdib_version_group_msg = get_p_attr(actual_report.abstract_report,
                                                 'MdibVersionGroup')
         elif which == 'metric':
-            action = SdcV1Definitions.Actions.EpisodicMetricReport
+            action = ReportAction.EpisodicMetricReport
             mdib_version_group_msg = get_p_attr(actual_report.abstract_metric_report.abstract_report,
                                                 'MdibVersionGroup')
         elif which == 'alert':
-            action = SdcV1Definitions.Actions.EpisodicAlertReport
+            action = ReportAction.EpisodicAlertReport
             mdib_version_group_msg = get_p_attr(actual_report.abstract_alert_report.abstract_report,
                                                 'MdibVersionGroup')
         elif which == 'component':
-            action = SdcV1Definitions.Actions.EpisodicComponentReport
+            action = ReportAction.EpisodicComponentReport
             mdib_version_group_msg = get_p_attr(actual_report.abstract_component_report.abstract_report,
                                                 'MdibVersionGroup')
         elif which == 'context':
-            action = SdcV1Definitions.Actions.EpisodicContextReport
+            action = ReportAction.EpisodicContextReport
             mdib_version_group_msg = get_p_attr(actual_report.abstract_context_report.abstract_report,
                                                 'MdibVersionGroup')
         elif which == 'description':
-            action = SdcV1Definitions.Actions.DescriptionModificationReport
+            action = ReportAction.DescriptionModificationReport
             mdib_version_group_msg = get_p_attr(actual_report.abstract_report,
                                                 'MdibVersionGroup')
         elif which == 'operational_state':
-            action = SdcV1Definitions.Actions.EpisodicOperationalStateReport
+            action = ReportAction.EpisodicOperationalStateReport
             mdib_version_group_msg = get_p_attr(actual_report.abstract_operational_state_report.abstract_report,
                                                 'MdibVersionGroup')
         else:

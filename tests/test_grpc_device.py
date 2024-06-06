@@ -91,7 +91,7 @@ class TestSomeDeviceGRPC(unittest.TestCase):
         reader = MessageReader(logger=logging.getLogger('unittest'))
         cl_mdib = MdibBase(SdcV1Definitions,
                            loghelper.get_logger_adapter('sdc.client.mdib'))
-        descriptors = reader.read_md_description(response.payload.mdib.md_description, cl_mdib)
+        descriptors = reader.read_md_description(response.payload.mdib.md_description)
         for d in descriptors:
             cl_mdib.descriptions.add_object_no_lock(d)
         missing_descr_handles = self._missing_descriptors(self.sdc_device._mdib, cl_mdib)
@@ -109,7 +109,7 @@ class TestSomeDeviceGRPC(unittest.TestCase):
         self.assertIsInstance(response, sdc_messages_pb2.GetMdDescriptionResponse)
         reader = MessageReader(logger=logging.getLogger('unittest'))
         cl_mdib = MdibBase(SdcV1Definitions, loghelper.get_logger_adapter('sdc.client.mdib'))
-        descriptors = reader.read_md_description(response.payload.md_description, cl_mdib)
+        descriptors = reader.read_md_description(response.payload.md_description)
         for d in descriptors:
             cl_mdib.descriptions.add_object_no_lock(d)
         missing_descr_handles = self._missing_descriptors(self.sdc_device._mdib, cl_mdib)
@@ -136,7 +136,7 @@ class TestSomeDeviceGRPC(unittest.TestCase):
         get_service = self.sdc_device.get_service
         # first get descriptors, otherwise states can't be instantiated
         response = get_service.GetMdDescription(None, None)
-        descriptors = reader.read_md_description(response.payload.md_description, cl_mdib)
+        descriptors = reader.read_md_description(response.payload.md_description)
         for d in descriptors:
             cl_mdib.descriptions.add_object_no_lock(d)
         # get all states

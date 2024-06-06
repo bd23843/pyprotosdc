@@ -2,10 +2,14 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 import logging
 from org.somda.protosdc.proto.model import sdc_services_pb2_grpc
+from pyprotosdc.actions import ReportAction
 
 if TYPE_CHECKING:
     from pyprotosdc.provider.subscriptionmgr import GSubscriptionsManager
 
+
+
+filter_all_actions = list(ReportAction)
 
 class MdibReportingService(sdc_services_pb2_grpc.MdibReportingServiceServicer):
 
@@ -18,6 +22,9 @@ class MdibReportingService(sdc_services_pb2_grpc.MdibReportingServiceServicer):
 
     def EpisodicReport(self, request, context):
         actions = list(request.filter.action_filter.action)
+        # empty list means subscribe all
+        if not actions:
+            actions = filter_all_actions
         self._logger.info('EpisodicReport called')
         subscription = self._subscriptions_manager.on_subscribe_request(actions)
         _run = True

@@ -9,9 +9,9 @@ from sdc11073.etc import short_filter_string
 from sdc11073.namespaces import default_ns_helper as nsh
 from sdc11073 import multikey
 from sdc11073 import loghelper
-from sdc11073.xml_types.actions import Actions
 from org.somda.protosdc.proto.model.sdc_messages_pb2 import EpisodicReportStream
 from org.somda.protosdc.proto.model.sdc_messages_pb2 import OperationInvokedReportStream
+from pyprotosdc.actions import ReportAction, OperationInvokedAction
 from ..mapping.statesmapper import generic_state_to_p
 from ..mapping.descriptorsmapper import generic_descriptor_to_p
 from ..mapping.basic_mappers import enum_attr_to_p
@@ -163,14 +163,14 @@ class GSubscriptionsManager:
             subscription.reports.get()
 
     def send_episodic_metric_report(self, states, mdib_version_group):
-        action = self.sdc_definitions.Actions.EpisodicMetricReport
+        action = ReportAction.EpisodicMetricReport
         subscribers = self._getSubscriptionsForAction(action)
         if not subscribers:
-            self._logger.info('sending episodic metric report: no subscribers')
+            self._logger.debug('sending episodic metric report: no subscribers')
             return
         self._logger.info('sending episodic metric report to %d subscribers', len(subscribers))
         report = EpisodicReportStream()
-        report.addressing.action = Actions.EpisodicMetricReport.value
+        report.addressing.action = action.value
         report.addressing.message_id = uuid.uuid4().urn
         oneof_report = report.report.metric
         mdib_version_group_msg = get_p_attr(oneof_report.abstract_metric_report.abstract_report,
@@ -186,14 +186,14 @@ class GSubscriptionsManager:
             s.send_notification_report(report)
 
     def send_episodic_operational_state_report(self, states, mdib_version_group):
-        action = self.sdc_definitions.Actions.EpisodicOperationalStateReport
+        action = ReportAction.EpisodicOperationalStateReport
         subscribers = self._getSubscriptionsForAction(action)
         if not subscribers:
-            self._logger.info('sending episodic operational state report: no subscribers')
+            self._logger.debug('sending episodic operational state report: no subscribers')
             return
         self._logger.info('sending episodic operational state report to %d subscribers', len(subscribers))
         report = EpisodicReportStream()
-        report.addressing.action = Actions.EpisodicOperationalStateReport.value
+        report.addressing.action = action.value
         report.addressing.message_id = uuid.uuid4().urn
         oneof_report = report.report.operational_state
         mdib_version_group_msg = get_p_attr(oneof_report.abstract_operational_state_report.abstract_report,
@@ -208,14 +208,14 @@ class GSubscriptionsManager:
             s.send_notification_report(report)
 
     def send_episodic_alert_report(self, states, mdib_version_group):
-        action = self.sdc_definitions.Actions.EpisodicAlertReport
+        action = ReportAction.EpisodicAlertReport
         subscribers = self._getSubscriptionsForAction(action)
         if not subscribers:
-            self._logger.info('sending episodic alert report: no subscribers')
+            self._logger.debug('sending episodic alert report: no subscribers')
             return
         self._logger.info('sending episodic alert report to %d subscribers', len(subscribers))
         report = EpisodicReportStream()
-        report.addressing.action = Actions.EpisodicAlertReport.value
+        report.addressing.action = action.value
         report.addressing.message_id = uuid.uuid4().urn
         oneof_report = report.report.alert
         mdib_version_group_msg = get_p_attr(oneof_report.abstract_alert_report.abstract_report,
@@ -231,14 +231,14 @@ class GSubscriptionsManager:
             s.send_notification_report(report)
 
     def send_episodic_component_state_report(self, states, mdib_version_group):
-        action = self.sdc_definitions.Actions.EpisodicComponentReport
+        action = ReportAction.EpisodicComponentReport
         subscribers = self._getSubscriptionsForAction(action)
         if not subscribers:
-            self._logger.info('sending episodic component state report: no subscribers')
+            self._logger.debug('sending episodic component state report: no subscribers')
             return
         self._logger.info('sending episodic component state report to %d subscribers', len(subscribers))
         report = EpisodicReportStream()
-        report.addressing.action = Actions.EpisodicComponentReport.value
+        report.addressing.action = action.value
         report.addressing.message_id = uuid.uuid4().urn
         oneof_report = report.report.component
         mdib_version_group_msg = get_p_attr(oneof_report.abstract_component_report.abstract_report,
@@ -253,14 +253,14 @@ class GSubscriptionsManager:
             s.send_notification_report(report)
 
     def send_episodic_context_report(self, states, mdib_version_group):
-        action = self.sdc_definitions.Actions.EpisodicContextReport
+        action = ReportAction.EpisodicContextReport
         subscribers = self._getSubscriptionsForAction(action)
         if not subscribers:
-            self._logger.info('sending episodic context state report: no subscribers')
+            self._logger.debug('sending episodic context state report: no subscribers')
             return
         self._logger.info('sending episodic context state report to %d subscribers', len(subscribers))
         report = EpisodicReportStream()
-        report.addressing.action = Actions.EpisodicContextReport.value
+        report.addressing.action = action.value
         report.addressing.message_id = uuid.uuid4().urn
         oneof_report = report.report.context
         mdib_version_group_msg = get_p_attr(oneof_report.abstract_context_report.abstract_report,
@@ -275,14 +275,14 @@ class GSubscriptionsManager:
             s.send_notification_report(report)
 
     def send_realtime_samples_report(self, states, mdib_version_group):
-        action = self.sdc_definitions.Actions.Waveform
+        action = ReportAction.Waveform
         subscribers = self._getSubscriptionsForAction(action)
         if not subscribers:
-            # self._logger.info('sending real time samples report: no subscribers')
+            # self._logger.debug('sending real time samples report: no subscribers')
             return
         self._logger.info('sending real time samples report to %d subscribers', len(subscribers))
         episodic_report_stream = EpisodicReportStream()
-        episodic_report_stream.addressing.action = Actions.Waveform.value
+        episodic_report_stream.addressing.action = action.value
         episodic_report_stream.addressing.message_id = uuid.uuid4().urn
         waveform_stream_msg = episodic_report_stream.report.waveform
         mdib_version_group_msg = get_p_attr(waveform_stream_msg.abstract_report,
@@ -293,14 +293,6 @@ class GSubscriptionsManager:
             generic_state_to_p(sc, p_st)
         for s in subscribers:
             s.send_notification_report(episodic_report_stream)
-
-    def endAllSubscriptions(self, sendSubscriptionEnd):
-        action = self.sdc_definitions.Actions.SubscriptionEnd
-        with self._subscriptions.lock:
-            if sendSubscriptionEnd:
-                for s in self._subscriptions.objects:
-                    s.sendNotificationEndMessage(action)
-            self._subscriptions.clear()
 
     def _mkDescriptorUpdatesReportPart(self,
                                        report : DescriptionModificationReportMsg,
@@ -325,10 +317,10 @@ class GSubscriptionsManager:
                 generic_state_to_p(state_container, p_state)
 
     def send_descriptor_updates(self, updated, created, deleted, updated_states, mdib_version_group):
-        action = self.sdc_definitions.Actions.DescriptionModificationReport
+        action = ReportAction.DescriptionModificationReport
         subscribers = self._getSubscriptionsForAction(action)
         if not subscribers:
-            self._logger.info('sending DescriptionModificationReport: no subscribers')
+            self._logger.debug('sending DescriptionModificationReport: no subscribers')
             return
         self._logger.info('sending DescriptionModificationReport upd={} crt={} del={}', updated, created, deleted)
         report = EpisodicReportStream()
@@ -352,10 +344,10 @@ class GSubscriptionsManager:
                          operation_target: str | None = None,
                          error: Enum | None = None,
                          error_message: str | None = None):
-        action = self.sdc_definitions.Actions.OperationInvokedReport
+        action = OperationInvokedAction
         subscribers = self._getSubscriptionsForAction(action)
         if not subscribers:
-            self._logger.info('sending operation invoked: no subscribers')
+            self._logger.debug('sending operation invoked: no subscribers')
             return
         self._logger.info('sending operation invoked to %d subscribers', len(subscribers))
 

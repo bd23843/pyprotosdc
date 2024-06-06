@@ -524,13 +524,22 @@ class TestClientSomeDeviceGRPC(unittest.TestCase):
         self.sdc_consumer.subscribe_all()
         ret = self.sdc_consumer.get_service.get_context_states()
         self.assertEqual(len(ret.states), len(self.sdc_provider.mdib.context_states.objects))
+        self.assertTrue(ret.p_response.payload.abstract_get_response.HasField('mdib_version_group_attr'))
 
     def test_get_Mdib(self):
         self.sdc_consumer.subscribe_all()
         ret = self.sdc_consumer.get_service.get_mdib()
         self.assertEqual(len(ret.descriptors), len(self.sdc_provider.mdib.descriptions.objects))
+        self.assertTrue(ret.p_response.payload.abstract_get_response.HasField('mdib_version_group_attr'))
 
-    def test_get_MdState(self):
+    def test_get_md_state(self):
         self.sdc_consumer.subscribe_all()
         ret = self.sdc_consumer.get_service.get_md_state()
         self.assertEqual(len(ret.states), len(self.sdc_provider.mdib.states.objects))
+        self.assertTrue(ret.p_response.payload.abstract_get_response.HasField('mdib_version_group_attr'))
+
+    def test_get_md_description(self):
+        self.sdc_consumer.subscribe_all()
+        ret = self.sdc_consumer.get_service.get_md_description()
+        self.assertEqual(len(ret.descriptors), len(self.sdc_provider.mdib.descriptions.objects))
+        self.assertTrue(ret.p_response.payload.abstract_get_response.HasField('mdib_version_group_attr'))

@@ -11,6 +11,7 @@ from pyprotosdc.consumer.serviceclients.getservice import GetServiceWrapper
 from pyprotosdc.consumer.serviceclients.setservice import SetServiceWrapper
 from pyprotosdc.consumer.serviceclients.metadataservice import MetadataServiceWrapper
 from pyprotosdc.consumer.serviceclients.mdibreportingservice import MdibReportingServiceWrapper, EpisodicReportData
+from pyprotosdc.actions import ReportAction
 from .operations import GOperationsManager
 from ..msgreader import MessageReader
 
@@ -48,7 +49,7 @@ class GSdcConsumer:
             self.channel = grpc.insecure_channel(netloc)
         else:
             self.channel = grpc.secure_channel(netloc, self._ssl_context_container.client_context)
-        self.sdc_definitions = SdcV1Definitions
+        self.sdc_definitions = SdcV1Definitions  # needed for consumer mdib
         self.log_prefix = ''
         self._logger = logging.getLogger('sdc.client')
         self.msg_reader = MessageReader(self._logger)
@@ -82,19 +83,19 @@ class GSdcConsumer:
     def _on_episodic_report(self, episodic_report_data: EpisodicReportData):
         """provide data via the usual observables."""
         self.any_report = episodic_report_data
-        if episodic_report_data.action == SdcV1Definitions.Actions.Waveform:
+        if episodic_report_data.action == ReportAction.Waveform:
             self.waveform_report = episodic_report_data
-        elif episodic_report_data.action == SdcV1Definitions.Actions.EpisodicAlertReport:
+        elif episodic_report_data.action == ReportAction.EpisodicAlertReport:
             self.episodic_alert_report = episodic_report_data
-        elif episodic_report_data.action == SdcV1Definitions.Actions.EpisodicComponentReport:
+        elif episodic_report_data.action == ReportAction.EpisodicComponentReport:
             self.episodic_component_report = episodic_report_data
-        elif episodic_report_data.action == SdcV1Definitions.Actions.EpisodicContextReport:
+        elif episodic_report_data.action == ReportAction.EpisodicContextReport:
             self.episodic_context_report = episodic_report_data
-        elif episodic_report_data.action == SdcV1Definitions.Actions.DescriptionModificationReport:
+        elif episodic_report_data.action == ReportAction.DescriptionModificationReport:
             self.description_modification_report = episodic_report_data
-        elif episodic_report_data.action == SdcV1Definitions.Actions.EpisodicMetricReport:
+        elif episodic_report_data.action == ReportAction.EpisodicMetricReport:
             self.episodic_metric_report = episodic_report_data
-        elif episodic_report_data.action == SdcV1Definitions.Actions.EpisodicOperationalStateReport:
+        elif episodic_report_data.action == ReportAction.EpisodicOperationalStateReport:
             self.episodic_operational_state_report = episodic_report_data
         else:
             raise ValueError(f'_on_episodic_report: dont know how to handle {episodic_report_data.action}')

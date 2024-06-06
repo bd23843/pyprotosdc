@@ -6,10 +6,10 @@ from typing import TYPE_CHECKING
 from sdc11073 import observableproperties as properties
 from sdc11073.mdib import consumermdib
 from sdc11073.xml_types import msg_types
-from sdc11073.xml_types.actions import Actions
 
 from pyprotosdc.mapping.basic_mappers import enum_attr_from_p
 from pyprotosdc.mapping.mapping_helpers import get_p_attr
+from pyprotosdc.actions import ReportAction
 
 if TYPE_CHECKING:
     from pyprotosdc.consumer.serviceclients.mdibreportingservice import EpisodicReportData
@@ -75,13 +75,13 @@ class GClientMdibContainer(consumermdib.ConsumerMdib):
         properties.bind(self._sdc_client, any_report=self._on_any_report)
 
     def _on_any_report(self, report: EpisodicReportData, is_buffered_report=False):
-        handler_lookup = {Actions.Waveform: self._on_waveform_report,
-                          Actions.EpisodicMetricReport: self._on_episodic_metric_report,
-                          Actions.EpisodicAlertReport: self._on_episodic_alert_report,
-                          Actions.EpisodicComponentReport: self._on_episodic_component_report,
-                          Actions.EpisodicContextReport: self._on_episodic_context_report,
-                          Actions.DescriptionModificationReport: self._on_description_modification_report,
-                          Actions.EpisodicOperationalStateReport: self._on_episodic_operational_state_report
+        handler_lookup = {ReportAction.Waveform: self._on_waveform_report,
+                          ReportAction.EpisodicMetricReport: self._on_episodic_metric_report,
+                          ReportAction.EpisodicAlertReport: self._on_episodic_alert_report,
+                          ReportAction.EpisodicComponentReport: self._on_episodic_component_report,
+                          ReportAction.EpisodicContextReport: self._on_episodic_context_report,
+                          ReportAction.DescriptionModificationReport: self._on_description_modification_report,
+                          ReportAction.EpisodicOperationalStateReport: self._on_episodic_operational_state_report
                           }
         self.logger.debug('received report %s', report.action)
         handler = handler_lookup[report.action]
@@ -408,8 +408,7 @@ class GClientMdibContainer(consumermdib.ConsumerMdib):
             for report_part in report.description.report_part:
                 descriptor_containers = report_data.msg_reader.read_descriptors(
                     report_part.p_descriptor,
-                    get_p_attr(report_part,'ParentDescriptor').string,
-                    self)
+                    get_p_attr(report_part,'ParentDescriptor').string)
                 modification_type = enum_attr_from_p(report_part,
                                                      'ModificationType',
                                                      msg_types.DescriptionModificationType)
