@@ -12,18 +12,11 @@ from sdc11073.etc import short_filter_string, _short_action_string
 from ..mapping.basic_mappers import enum_from_p
 from ..mapping.mapping_helpers import get_p_attr
 from ..mapping.generic import generic_from_p
-from org.somda.protosdc.proto.model import sdc_messages_pb2
+
 if TYPE_CHECKING:
     from org.somda.protosdc.proto.model.biceps.operationinvokedreport_pb2 import OperationInvokedReportMsg
+    from pyprotosdc.mapping.msgtypes_mappers import AnySetServiceResponse
 
-AnySetServiceResponse = (sdc_messages_pb2.SetAlertStateResponse
-                         | sdc_messages_pb2.SetContextStateResponse
-                         | sdc_messages_pb2.SetComponentStateResponse
-                         | sdc_messages_pb2.SetContextStateResponse
-                         | sdc_messages_pb2.SetMetricStateResponse
-                         | sdc_messages_pb2.SetValueResponse
-                         | sdc_messages_pb2.SetStringResponse
-                         | sdc_messages_pb2.ActivateResponse)
 
 
 @dataclass

@@ -36,8 +36,10 @@ if TYPE_CHECKING:
     from sdc11073.mdib.providermdib import ProviderMdib
     from sdc11073.mdib.transactionsprotocol import TransactionResultProtocol
     from sdc11073.xml_types.dpws_types import ThisDeviceType, ThisModelType
+    from sdc11073.xml_types import msg_types
     from sdc11073.certloader import SSLContextContainer
     from pyprotosdc.discovery.discoveryimpl import GDiscovery
+    from pyprotosdc.mapping.msgtypes_mappers import AnySetServiceRequest
 
 
 class GSdcProvider(object):
@@ -170,14 +172,14 @@ class GSdcProvider(object):
 
     def handle_operation_request(self,
                                  operation: OperationDefinitionBase,
-                                 request: Any,
-                                 arguments: Any,
+                                 request: AnySetServiceRequest,
+                                 converted_request: msg_types.AbstractSet,
                                  transaction_id: int) -> Enum:
         """Find the responsible sco and forward request to it."""
         for sco in self._sco_operations_registries.values():
             has_this_operation = sco.get_operation_by_handle(operation.handle) is not None
             if has_this_operation:
-                return sco.handle_operation_request(operation, request, arguments, transaction_id)
+                return sco.handle_operation_request(operation, request, converted_request, transaction_id)
         self._logger.error('no sco has operation %s', operation.handle)
         return self.mdib.data_model.msg_types.InvocationState.FAILED
 

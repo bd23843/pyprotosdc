@@ -5,7 +5,7 @@ import platform
 import threading
 import time
 import uuid
-from enum import StrEnum
+from enum import Enum
 from typing import TYPE_CHECKING, Callable
 
 from org.somda.protosdc.proto.model.discovery import discovery_messages_pb2, discovery_types_pb2
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     import ipaddress
 
 
-class Actions(StrEnum):
+class Actions(str, Enum):
     Hello = 'org.somda.protosc.discovery.action.Hello'
     Bye = 'org.somda.protosc.discovery.action.Bye'
     SearchRequest = 'org.somda.protosc.discovery.action.SearchRequest'
