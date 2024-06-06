@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING
-
+from urllib.parse import urlparse
 import grpc
 from sdc11073 import observableproperties as properties
 from sdc11073.definitions_sdc import SdcV1Definitions
@@ -37,13 +37,17 @@ class GSdcConsumer:
 
     any_report = properties.ObservableProperty()  # all reports can be observed here
 
-    def __init__(self, ip, ssl_context_container: SSLContextContainer | None = None):
+    def __init__(self, ip: str, ssl_context_container: SSLContextContainer | None = None):
         self._ssl_context_container = ssl_context_container
+        if ip.startswith('http'):
+            netloc = urlparse(ip).netloc
+        else:
+            netloc = ip
         # Todo: create a secure channel if ssl_context_container is not None
         if ssl_context_container is None:
-            self.channel = grpc.insecure_channel(ip)
+            self.channel = grpc.insecure_channel(netloc)
         else:
-            self.channel = grpc.secure_channel(ip, self._ssl_context_container.client_context)
+            self.channel = grpc.secure_channel(netloc, self._ssl_context_container.client_context)
         self.sdc_definitions = SdcV1Definitions
         self.log_prefix = ''
         self._logger = logging.getLogger('sdc.client')
