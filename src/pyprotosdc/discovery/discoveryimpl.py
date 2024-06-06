@@ -23,10 +23,10 @@ if TYPE_CHECKING:
 
 
 class Actions(str, Enum):
-    Hello = 'org.somda.protosc.discovery.action.Hello'
-    Bye = 'org.somda.protosc.discovery.action.Bye'
-    SearchRequest = 'org.somda.protosc.discovery.action.SearchRequest'
-    SearchResponse = 'org.somda.protosc.discovery.action.SearchResponse'
+    Hello = 'org.somda.protosdc.discovery.action.Hello'
+    Bye = 'org.somda.protosdc.discovery.action.Bye'
+    SearchRequest = 'org.somda.protosdc.discovery.action.SearchRequest'
+    SearchResponse = 'org.somda.protosdc.discovery.action.SearchResponse'
 
 
 def _fill_p_endpoint(service: Service, p_endpoint: discovery_types_pb2.Endpoint):

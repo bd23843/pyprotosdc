@@ -10,9 +10,11 @@ from urllib.parse import quote_plus
 import grpc
 
 from org.somda.protosdc.proto.model import sdc_services_pb2_grpc
+from org.somda.protosdc.proto.model.metadata import metadata_services_pb2_grpc
 
 from pyprotosdc.provider.services.getservice import GetService
 from pyprotosdc.provider.services.setservice import SetService
+from pyprotosdc.provider.services.metadataservice import MetadataService
 from pyprotosdc.provider.services.mdibreportingservice import MdibReportingService
 from . import subscriptionmgr
 from pyprotosdc.provider.services.localizationservice import LocalizationService
@@ -57,6 +59,8 @@ class GSdcProvider(object):
         if g_discovery is None:
             raise ValueError('g_discovery is None')
         self._g_discovery = g_discovery
+        self.this_model = this_model
+        self.this_device = this_device
         self._log_prefix = log_prefix
         self._sslContext=None
         self._mdib = mdib
@@ -71,9 +75,9 @@ class GSdcProvider(object):
         self._x_addr: tuple[str, int] | None = None
         self._transaction_id = 0  # central transaction number handling for all called operations.
         self._transaction_id_lock = threading.Lock()
-
         self.get_service = GetService(self._mdib)
         self.set_service = SetService(self)
+        self.metadata_service = MetadataService(self)
 
         sco_descr_list = self._mdib.descriptions.NODETYPE.get(pm_qnames.ScoDescriptor, [])
         self._sco_operations_registries = {}
@@ -192,11 +196,13 @@ class GSdcProvider(object):
     def _serve(self):
         self._server = grpc.server(futures.ThreadPoolExecutor(max_workers=10,
                                                               thread_name_prefix='grpc_thr_p'))
+
         sdc_services_pb2_grpc.add_GetServiceServicer_to_server(self.get_service, self._server)
         sdc_services_pb2_grpc.add_SetServiceServicer_to_server(self.set_service, self._server)
         sdc_services_pb2_grpc.add_MdibReportingServiceServicer_to_server(self.mdib_reporting_service, self._server)
         sdc_services_pb2_grpc.add_LocalizationServiceServicer_to_server(self.localization_service, self._server)
         sdc_services_pb2_grpc.add_ArchiveServiceServicer_to_server(self.archive_service, self._server)
+        metadata_services_pb2_grpc.add_MetadataServiceServicer_to_server(self.metadata_service, self._server)
         addrs = self._g_discovery.get_active_addresses()
         self._port_number = self._server.add_insecure_port(f'{addrs[0]}:0')
         self._x_addr = (addrs[0], self._port_number)
@@ -264,11 +270,11 @@ class GSdcProvider(object):
         publish device on the network (sends HELLO message)
         :return:
         """
-        scopes = self._mk_scopes()
-        xAddrs = self._get_xaddrs()
-        self._g_discovery.publish_service(self.epr, scopes, [f'{self._x_addr[0]}:{self._x_addr[1]}'])
+        scopes = self.mk_scopes()
+        addresses = self.get_xaddrs()
+        self._g_discovery.publish_service(self.epr, scopes, addresses)
 
-    def _mk_scopes(self) -> list[str]:
+    def mk_scopes(self) -> list[str]:
         scopes = []
         locations = self._mdib.context_states.NODETYPE.get(pm_qnames.LocationContextState)
         if not locations:
@@ -320,9 +326,9 @@ class GSdcProvider(object):
                     scope_strings.add('sdc.cdc.type:/{}/{}/{}'.format(cs, csv, d.Type.Code))
         return scope_strings
 
-    def _get_xaddrs(self) -> list[str]:
+    def get_xaddrs(self) -> list[str]:
         srv = self._server
-        return [f'{self._x_addr[0]}:{self._x_addr[0]}']
+        return [f'http://{self._x_addr[0]}:{self._x_addr[1]}']
         #xaddrs = self._server
 
     def _mk_subscription_manager(self, max_subscription_duration):

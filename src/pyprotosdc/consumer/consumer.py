@@ -9,6 +9,7 @@ from sdc11073.definitions_sdc import SdcV1Definitions
 
 from pyprotosdc.consumer.serviceclients.getservice import GetServiceWrapper
 from pyprotosdc.consumer.serviceclients.setservice import SetServiceWrapper
+from pyprotosdc.consumer.serviceclients.metadataservice import MetadataServiceWrapper
 from pyprotosdc.consumer.serviceclients.mdibreportingservice import MdibReportingServiceWrapper, EpisodicReportData
 from .operations import GOperationsManager
 from ..msgreader import MessageReader
@@ -44,6 +45,7 @@ class GSdcConsumer:
         self.log_prefix = ''
         self._logger = logging.getLogger('sdc.client')
         self.msg_reader = MessageReader(self._logger)
+        self.metadata_service = MetadataServiceWrapper(self.channel)
         self.get_service = GetServiceWrapper(self.channel, self.msg_reader)
         self.set_service = SetServiceWrapper(self.channel, self.msg_reader)
         self._event_service = MdibReportingServiceWrapper(self.channel, self.msg_reader)
@@ -61,6 +63,7 @@ class GSdcConsumer:
                 client.set_operations_manager(self._operations_manager)
 
     def subscribe_all(self):
+        metadata = self.metadata_service.get_metadata()
         self._event_service.EpisodicReport()  # starts a background thread to receive stream data
         self.set_service.OperationInvokedReport()  # starts a background thread to receive stream data
         self.all_subscribed = True

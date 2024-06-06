@@ -8,7 +8,7 @@ from threading import Lock
 from sdc11073.xml_types.pm_types import InstanceIdentifier
 from sdc11073 import loghelper
 from sdc11073.xml_types import msg_types
-from sdc11073.etc import short_filter_string, _short_action_string
+from sdc11073.etc import short_filter_string
 from ..mapping.basic_mappers import enum_from_p
 from ..mapping.mapping_helpers import get_p_attr
 from ..mapping.generic import generic_from_p
@@ -59,7 +59,7 @@ class GOperationsManager(object):
         fut = Future()
         invocation_info = response.payload.abstract_set_response.invocation_info
         transaction_id = invocation_info.transaction_id.unsigned_int
-        short_action = _short_action_string(response.addressing.action)
+        short_action = short_filter_string([response.addressing.action])
         invocation_state = enum_from_p(invocation_info, 'invocation_state', msg_types.InvocationState)
 
         if invocation_state == msg_types.InvocationState.FAILED:
