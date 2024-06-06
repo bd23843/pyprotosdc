@@ -178,6 +178,7 @@ class GSubscriptionsManager:
         set_mdib_version_group(mdib_version_group_msg, mdib_version_group)
 
         p_report_part = oneof_report.abstract_metric_report.report_part.add()
+        p_report_part.abstract_report_part.source_mds.string = 'ToDo'
         for sc in states:
             p_st = p_report_part.metric_state.add()
             generic_state_to_p(sc, p_st)
@@ -199,6 +200,7 @@ class GSubscriptionsManager:
                                             'MdibVersionGroup')
         set_mdib_version_group(mdib_version_group_msg, mdib_version_group)
         p_report_part = oneof_report.abstract_operational_state_report.report_part.add()
+        p_report_part.abstract_report_part.source_mds.string = 'ToDo'
         for sc in states:
             p_st = p_report_part.operation_state.add()
             generic_state_to_p(sc, p_st)
@@ -216,12 +218,12 @@ class GSubscriptionsManager:
         report.addressing.action = Actions.EpisodicAlertReport.value
         report.addressing.message_id = uuid.uuid4().urn
         oneof_report = report.report.alert
-        # self._set_mdib_version_group(oneof_report.abstract_alert_report.abstract_report.a_mdib_version_group, sequenceId, mdibVersion)
         mdib_version_group_msg = get_p_attr(oneof_report.abstract_alert_report.abstract_report,
                                             'MdibVersionGroup')
         set_mdib_version_group(mdib_version_group_msg, mdib_version_group)
 
         p_report_part = oneof_report.abstract_alert_report.report_part.add()
+        p_report_part.abstract_report_part.source_mds.string = 'ToDo'
         for sc in states:
             p_st = p_report_part.alert_state.add()
             generic_state_to_p(sc, p_st)
@@ -244,6 +246,7 @@ class GSubscriptionsManager:
         set_mdib_version_group(mdib_version_group_msg, mdib_version_group)
         for sc in states:
             p_report_part = oneof_report.abstract_component_report.report_part.add()
+            p_report_part.abstract_report_part.source_mds.string = 'ToDo'
             p_st = p_report_part.component_state.add()
             generic_state_to_p(sc, p_st)
         for s in subscribers:
@@ -265,6 +268,7 @@ class GSubscriptionsManager:
         set_mdib_version_group(mdib_version_group_msg, mdib_version_group)
         for sc in states:
             p_report_part = oneof_report.abstract_context_report.report_part.add() # ReportPartMsg
+            p_report_part.abstract_report_part.source_mds.string = 'ToDo'
             p_st = p_report_part.context_state.add()
             generic_state_to_p(sc, p_st)
         for s in subscribers:
@@ -277,18 +281,18 @@ class GSubscriptionsManager:
             # self._logger.info('sending real time samples report: no subscribers')
             return
         self._logger.info('sending real time samples report to %d subscribers', len(subscribers))
-        report = EpisodicReportStream()
-        report.addressing.action = Actions.Waveform.value
-        report.addressing.message_id = uuid.uuid4().urn
-        oneof_report = report.report.waveform
-        mdib_version_group_msg = get_p_attr(oneof_report.abstract_report,
+        episodic_report_stream = EpisodicReportStream()
+        episodic_report_stream.addressing.action = Actions.Waveform.value
+        episodic_report_stream.addressing.message_id = uuid.uuid4().urn
+        waveform_stream_msg = episodic_report_stream.report.waveform
+        mdib_version_group_msg = get_p_attr(waveform_stream_msg.abstract_report,
                                             'MdibVersionGroup')
         set_mdib_version_group(mdib_version_group_msg, mdib_version_group)
         for sc in states:
-            p_st = oneof_report.state.add()
+            p_st = waveform_stream_msg.state.add()
             generic_state_to_p(sc, p_st)
         for s in subscribers:
-            s.send_notification_report(report)
+            s.send_notification_report(episodic_report_stream)
 
     def endAllSubscriptions(self, sendSubscriptionEnd):
         action = self.sdc_definitions.Actions.SubscriptionEnd
@@ -307,8 +311,7 @@ class GSubscriptionsManager:
         # This is not implemented, and I think it is not needed.
         for descr_container in descriptors:
             p_report_part = report.report_part.add()
-            # map = {'Crt': 0, 'Upt': 1, 'Del': 2}
-            # p_report_part.a_modification_type.enum_value = map[modification_type]
+            p_report_part.abstract_report_part.source_mds.string = 'ToDo'
             enum_attr_to_p(modification_type, get_p_attr(p_report_part, 'ModificationType'))
             if descr_container.parent_handle is not None:  # only Mds can have None
                 get_p_attr(p_report_part, 'ParentDescriptor').string = descr_container.parent_handle
@@ -364,6 +367,7 @@ class GSubscriptionsManager:
 
         set_mdib_version_group(mdib_version_group_msg, mdib_version_group)
         report_part = op_invoked.report_part.add()
+        report_part.abstract_report_part.source_mds.string = 'ToDo'
         report_part.invocation_info.transaction_id.unsigned_int = transaction_id
         enum_attr_to_p(invocation_state, report_part.invocation_info.invocation_state)
         if error is not None:

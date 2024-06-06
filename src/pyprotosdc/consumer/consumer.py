@@ -40,7 +40,10 @@ class GSdcConsumer:
     def __init__(self, ip, ssl_context_container: SSLContextContainer | None = None):
         self._ssl_context_container = ssl_context_container
         # Todo: create a secure channel if ssl_context_container is not None
-        self.channel = grpc.insecure_channel(ip)
+        if ssl_context_container is None:
+            self.channel = grpc.insecure_channel(ip)
+        else:
+            self.channel = grpc.secure_channel(ip, self._ssl_context_container.client_context)
         self.sdc_definitions = SdcV1Definitions
         self.log_prefix = ''
         self._logger = logging.getLogger('sdc.client')

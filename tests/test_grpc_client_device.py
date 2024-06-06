@@ -172,7 +172,6 @@ class TestClientSomeDeviceGRPC(unittest.TestCase):
 
     def test_init_mdib(self):
         # self.provideRealtimeData(self.sdc_provider)
-        # self.sdc_consumer.subscribe_all()
         cl_mdib = GClientMdibContainer(self.sdc_consumer)
         cl_mdib.init_mdib()
         self.assertEqual(cl_mdib.mdib_version, self.sdc_provider._mdib.mdib_version)
