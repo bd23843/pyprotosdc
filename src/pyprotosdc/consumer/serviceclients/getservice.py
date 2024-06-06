@@ -51,7 +51,7 @@ class GetServiceWrapper():
 
     def get_mdib(self) -> GetMdibResponseData:
         request = sdc_messages_pb2.GetMdibRequest()
-        request.addressing.messageId = uuid.uuid4().urn
+        request.addressing.message_id = uuid.uuid4().urn
         request.addressing.action = GetAction.GetMdibRequest
 
         response = self._stub.GetMdib(request)
@@ -63,7 +63,7 @@ class GetServiceWrapper():
 
     def get_md_description(self) -> GetMdDescriptionResponseData:
         request = sdc_messages_pb2.GetMdDescriptionRequest()
-        request.addressing.messageId = uuid.uuid4().urn
+        request.addressing.message_id = uuid.uuid4().urn
         request.addressing.action = GetAction.GetMdDescriptionRequest
 
         response = self._stub.GetMdDescription(request)
@@ -75,11 +75,11 @@ class GetServiceWrapper():
 
     def get_md_state(self) -> GetMdStateResponseData:
         request = sdc_messages_pb2.GetMdStateRequest()
-        request.addressing.messageId = uuid.uuid4().urn
+        request.addressing.message_id = uuid.uuid4().urn
         request.addressing.action = GetAction.GetMdStateRequest
 
         response = self._stub.GetMdState(request)
-        response.addressing.messageId = uuid.uuid4().urn
+        response.addressing.message_id = uuid.uuid4().urn
         response.addressing.action = 'GetMdib'
         mdib_version_group_msg = get_p_attr(response.payload.abstract_get_response, 'MdibVersionGroup')
         mdib_version_group = get_mdib_version_group(mdib_version_group_msg)
@@ -89,7 +89,7 @@ class GetServiceWrapper():
 
     def get_context_states(self) -> GetContextStatesResponseData:
         request = sdc_messages_pb2.GetContextStatesRequest()
-        request.addressing.messageId = uuid.uuid4().urn
+        request.addressing.message_id = uuid.uuid4().urn
         request.addressing.action = GetAction.GetContextStateRequest
 
         response = self._stub.GetContextStates(request)
