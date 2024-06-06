@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+import uuid
 from typing import TYPE_CHECKING
 from dataclasses import dataclass
 from org.somda.protosdc.proto.model import sdc_services_pb2_grpc, sdc_messages_pb2
@@ -7,7 +9,7 @@ from sdc11073.mdib.mdibbase import MdibVersionGroup
 
 from pyprotosdc.mapping.msgtypes_mappers import get_mdib_version_group
 from pyprotosdc.mapping.mapping_helpers import get_p_attr
-
+from pyprotosdc.actions import GetAction
 
 if TYPE_CHECKING:
     from pyprotosdc.msgreader import MessageReader
@@ -49,7 +51,11 @@ class GetServiceWrapper():
 
     def get_mdib(self) -> GetMdibResponseData:
         request = sdc_messages_pb2.GetMdibRequest()
+        request.addressing.messageId = uuid.uuid4().urn
+        request.addressing.action = GetAction.GetMdibRequest
+
         response = self._stub.GetMdib(request)
+
         mdib_version_group_msg = get_p_attr(response.payload.abstract_get_response, 'MdibVersionGroup')
         mdib_version_group = get_mdib_version_group(mdib_version_group_msg)
         descriptors, states = self._msg_reader.read_get_mdib_response(response)
@@ -57,7 +63,11 @@ class GetServiceWrapper():
 
     def get_md_description(self) -> GetMdDescriptionResponseData:
         request = sdc_messages_pb2.GetMdDescriptionRequest()
+        request.addressing.messageId = uuid.uuid4().urn
+        request.addressing.action = GetAction.GetMdDescriptionRequest
+
         response = self._stub.GetMdDescription(request)
+
         mdib_version_group_msg = get_p_attr(response.payload.abstract_get_response, 'MdibVersionGroup')
         mdib_version_group = get_mdib_version_group(mdib_version_group_msg)
         descriptors = self._msg_reader.read_md_description(response.payload.md_description)
@@ -65,7 +75,12 @@ class GetServiceWrapper():
 
     def get_md_state(self) -> GetMdStateResponseData:
         request = sdc_messages_pb2.GetMdStateRequest()
+        request.addressing.messageId = uuid.uuid4().urn
+        request.addressing.action = GetAction.GetMdStateRequest
+
         response = self._stub.GetMdState(request)
+        response.addressing.messageId = uuid.uuid4().urn
+        response.addressing.action = 'GetMdib'
         mdib_version_group_msg = get_p_attr(response.payload.abstract_get_response, 'MdibVersionGroup')
         mdib_version_group = get_mdib_version_group(mdib_version_group_msg)
         mdib = None
@@ -74,6 +89,9 @@ class GetServiceWrapper():
 
     def get_context_states(self) -> GetContextStatesResponseData:
         request = sdc_messages_pb2.GetContextStatesRequest()
+        request.addressing.messageId = uuid.uuid4().urn
+        request.addressing.action = GetAction.GetContextStateRequest
+
         response = self._stub.GetContextStates(request)
         mdib_version_group_msg = get_p_attr(response.payload.abstract_get_response, 'MdibVersionGroup')
         mdib_version_group = get_mdib_version_group(mdib_version_group_msg)

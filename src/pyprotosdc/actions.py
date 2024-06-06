@@ -13,3 +13,14 @@ class ReportAction(str,Enum):
 
 # this is a dummy action, only used internally for subscription manager
 OperationInvokedAction = 'org.somda.protosdc.mdib_reporting.action.OperationInvokedReport'
+
+
+class GetAction(str, Enum):
+    GetMdibRequest = 'org.somda.protosdc.get.action.GetMdibRequest'
+    GetMdibResponse = 'org.somda.protosdc.get.action.GetMdibResponse'
+    GetMdDescriptionRequest = 'org.somda.protosdc.get.action.GetMdDescriptionRequest'
+    GetMdDescriptionResponse = 'org.somda.protosdc.get.action.GetMdDescriptionResponse'
+    GetMdStateRequest = 'org.somda.protosdc.get.action.GetMdStateRequest'
+    GetMdStateResponse = 'org.somda.protosdc.get.action.GetMdStateResponse'
+    GetContextStateRequest = 'org.somda.protosdc.get.action.GetContextStateRequest'
+    GetContextStateResponse = 'org.somda.protosdc.get.action.GetContextStateResponse'
