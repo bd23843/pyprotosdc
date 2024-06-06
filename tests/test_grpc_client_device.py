@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING
 import unittest
 import logging
 import uuid
+from lxml import etree
 import os
 import time
 from decimal import Decimal
@@ -508,14 +509,28 @@ class TestClientSomeDeviceGRPC(unittest.TestCase):
 
         proposed_context_state = consumer_mdib.xtra.mk_proposed_state(op_target_handle)
         proposed_context_state.Handle = proposed_context_state.DescriptorHandle
+        elem = etree.Element('test')
+        elem.text = 'foobar'
+        proposed_context_state.CoreData.ExtExtension.append(elem)
         future = set_service.set_context_state(op_handle, [proposed_context_state])
         result = future.result(timeout=SET_TIMEOUT)
         state = result.InvocationInfo.InvocationState
         self.assertEqual(state, msg_types.InvocationState.FINISHED)
         self.assertIsNone(result.InvocationInfo.InvocationError)
+        time.sleep(1)
+        patients = consumer_mdib.context_states.NODETYPE.get(pm_qnames.PatientContextState)
 
     def test_get_context_states(self):
         self.sdc_consumer.subscribe_all()
         ret = self.sdc_consumer.get_service.get_context_states()
         self.assertEqual(len(ret.states), len(self.sdc_provider.mdib.context_states.objects))
-        pass
+
+    def test_get_Mdib(self):
+        self.sdc_consumer.subscribe_all()
+        ret = self.sdc_consumer.get_service.get_mdib()
+        self.assertEqual(len(ret.descriptors), len(self.sdc_provider.mdib.descriptions.objects))
+
+    def test_get_MdState(self):
+        self.sdc_consumer.subscribe_all()
+        ret = self.sdc_consumer.get_service.get_md_state()
+        self.assertEqual(len(ret.states), len(self.sdc_provider.mdib.states.objects))

@@ -29,6 +29,11 @@ class GetContextStatesResponseData:
     p_response: sdc_messages_pb2.GetContextStatesResponse
     states: list[AbstractStateContainer]
 
+@dataclass
+class GetMdStateResponseData:
+    mdib_version_group: MdibVersionGroup
+    p_response: sdc_messages_pb2.GetMdStateResponse
+    states: list[AbstractStateContainer]
 
 class GetMdDescriptionResponseData:
     mdib_version_group: MdibVersionGroup
@@ -56,6 +61,15 @@ class GetServiceWrapper():
         mdib_version_group = get_mdib_version_group(mdib_version_group_msg)
         descriptors = self._msg_reader.read_md_description(response.payload.mdib.md_description)
         return GetMdDescriptionResponseData(mdib_version_group, response, descriptors)
+
+    def get_md_state(self) -> GetMdStateResponseData:
+        request = sdc_messages_pb2.GetMdStateRequest()
+        response = self._stub.GetMdState(request)
+        mdib_version_group_msg = get_p_attr(response.payload.abstract_get_response, 'MdibVersionGroup')
+        mdib_version_group = get_mdib_version_group(mdib_version_group_msg)
+        mdib = None
+        states = self._msg_reader.read_states(response.payload.md_state.state, mdib)
+        return GetMdStateResponseData(mdib_version_group, response, states)
 
     def get_context_states(self) -> GetContextStatesResponseData:
         request = sdc_messages_pb2.GetContextStatesRequest()

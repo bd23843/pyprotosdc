@@ -163,6 +163,8 @@ class GetService(sdc_services_pb2_grpc.GetServiceServicer):
     def GetMdib(self, request: GetMdibRequest, context) -> GetMdibResponse:
         try:
             response = GetMdibResponse()
+            mdib_version_group_msg = get_p_attr(response.payload.abstract_get_response, 'MdibVersionGroup')
+            set_mdib_version_group(mdib_version_group_msg, self._mdib.mdib_version_group)
             _mdib_to_p(self._mdib, response.payload.mdib.md_description.mds, response.payload.mdib.md_state.state)
             mdib_version_group_msg = getattr(response.payload.mdib, attr_name_to_p('MdibVersionGroup'))
             mdib_version_group_msg1 = get_p_attr(response.payload.abstract_get_response, 'MdibVersionGroup')
@@ -184,6 +186,8 @@ class GetService(sdc_services_pb2_grpc.GetServiceServicer):
     def GetMdDescription(self, request, context):
         try:
             response = GetMdDescriptionResponse()
+            mdib_version_group_msg = get_p_attr(response.payload.abstract_get_response, 'MdibVersionGroup')
+            set_mdib_version_group(mdib_version_group_msg, self._mdib.mdib_version_group)
             p_mds_list = response.payload.md_description.mds
             src_mds_list = self._mdib.descriptions.NODETYPE.get(pm_qnames.MdsDescriptor)
             for scr_mds in src_mds_list:
@@ -203,6 +207,9 @@ class GetService(sdc_services_pb2_grpc.GetServiceServicer):
             else:
                 states = [self._mdib.states.descriptor_handle.get_one(h.string) for h in requested_handles]
             response = GetMdStateResponse()
+            mdib_version_group_msg = get_p_attr(response.payload.abstract_get_response, 'MdibVersionGroup')
+            set_mdib_version_group(mdib_version_group_msg, self._mdib.mdib_version_group)
+
             _md_state_to_p(states, response.payload.md_state.state)
             return response
         except:
@@ -218,6 +225,9 @@ class GetService(sdc_services_pb2_grpc.GetServiceServicer):
             else:
                 states = [self._mdib.context_states.descriptor_handle.get_one(h.string) for h in requested_handles]
             response = GetContextStatesResponse()
+            mdib_version_group_msg = get_p_attr(response.payload.abstract_get_response, 'MdibVersionGroup')
+            set_mdib_version_group(mdib_version_group_msg, self._mdib.mdib_version_group)
+
             _md_state_to_p(states, response.payload.context_state)
             return response
         except:
