@@ -51,6 +51,7 @@ from org.somda.protosdc.proto.model.biceps.stringmetricvalue_pb2 import StringMe
 from org.somda.protosdc.proto.model.biceps.systemsignalactivation_pb2 import SystemSignalActivationMsg
 from org.somda.protosdc.proto.model.biceps.transactionid_pb2 import TransactionIdMsg
 from org.somda.protosdc.proto.model.biceps.workflowcontextstate_pb2 import WorkflowContextStateMsg
+from org.somda.protosdc.proto.model.biceps.extension_pb2 import ExtensionMsg
 from org.somda.protosdc.proto.model.common import common_types_pb2
 from sdc11073.mdib.containerbase import ContainerBase
 from sdc11073.mdib.statecontainers import (AllowedValuesType)
@@ -740,6 +741,9 @@ def map_generic_from_p(p: GeneratedProtocolMessageType,
                 elif isinstance(dest_type, NodeTextProperty):
                     str_value = p_src if not dest_type.is_optional else p_src.value
                     setattr(pm_dest, name, str_value)
+                elif isinstance(p_src, ExtensionMsg):
+                    # Todo: implement handling
+                    pass
                 else:
                     if p_current_entry_point.HasField(p_name):
                         _logger().debug('%s recursive map_generic_from_p(%s, %s)', indent, p_src.__class__.__name__,

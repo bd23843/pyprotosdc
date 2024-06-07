@@ -290,50 +290,50 @@ def run_ref_test():
     info ='count numeric metric state updates'
     print(step, info)
     is_ok, result = test_min_updates_per_handle(numeric_metric_updates, min_updates)
-    log_result(is_ok, results, step, info)
+    log_result(is_ok, results, step, info, result)
 
     step = '4b'
     info = 'count string metric state updates'
     print(step)
     is_ok, result = test_min_updates_per_handle(string_metric_updates, min_updates,)
-    log_result(is_ok, results, step, info)
+    log_result(is_ok, results, step, info, result)
 
     step = '4c'
     info = 'count alert condition updates'
     print(step)
     is_ok, result = test_min_updates_per_handle(alert_condition_updates, min_updates)
-    log_result(is_ok, results, step, info)
+    log_result(is_ok, results, step, info, result)
 
     step = '4d'
     info =' count alert signal updates'
     print(step, info)
     is_ok, result = test_min_updates_per_handle(alert_signal_updates, min_updates)
-    log_result(is_ok, results, step, info)
+    log_result(is_ok, results, step, info, result)
 
     step ='4e'
     info = 'count alert system self checks'
     is_ok, result = test_min_updates_per_handle(alert_system_updates, min_updates)
-    log_result(is_ok, results, step, info)
+    log_result(is_ok, results, step, info, result)
 
     step = '4f'
     info = 'count waveform updates'
     print(step, info)
     is_ok, result = test_min_updates_per_handle(waveform_updates, min_updates)
-    log_result(is_ok, results, step, info+ ' notifications per second')
+    log_result(is_ok, results, step, info+ ' notifications per second', result)
     if len(waveform_updates) < 3:
-        log_result(False, results, step, info+' number of waveforms')
+        log_result(False, results, step, info+' number of waveforms', result)
     else:
-        log_result(True, results, step, info+' number of waveforms')
+        log_result(True, results, step, info+' number of waveforms', result)
 
     expected_samples = 1000 * sleep_timer*0.9
     for handle, reports in waveform_updates.items():
         notifications = [n for n in reports if n.MetricValue is not None]
         samples = sum([len(n.MetricValue.Samples) for n in notifications])
         if samples < expected_samples:
-            log_result(False, results, step, info + f' waveform {handle} has {samples} samples, expecting {expected_samples}')
+            log_result(False, results, step, info, f' waveform {handle} has {samples} samples, expecting {expected_samples}')
             is_ok = False
         else:
-            log_result(True, results, step, info + f' waveform {handle} has {samples} samples')
+            log_result(True, results, step, info, f' waveform {handle} has {samples} samples')
 
     pm = mdib.data_model.pm_names
     pm_types = mdib.data_model.pm_types
@@ -344,19 +344,19 @@ def run_ref_test():
     info = 'count battery updates'
     print(step, info)
     is_ok, result = test_min_updates_for_type(component_updates, 1, pm.BatteryState)
-    log_result(is_ok, results, step, info)
+    log_result(is_ok, results, step, info, result)
 
     step = '4g'
     info ='count VMD updates'
     print(step, info)
     is_ok, result = test_min_updates_for_type(component_updates, 1, pm.VmdState)
-    log_result(is_ok, results, step, info)
+    log_result(is_ok, results, step, info, result)
 
     step = '4g'
     info = 'count MDS updates'
     print(step, info)
     is_ok, result = test_min_updates_for_type(component_updates, 1, pm.MdsState)
-    log_result(is_ok, results, step, info)
+    log_result(is_ok, results, step, info, result)
 
     step = '4h'
     info = 'Count Enable/Disable operations'
@@ -370,7 +370,7 @@ def run_ref_test():
         is_ok = False
         result = 'got no operational state updates'
 
-    log_result(is_ok, results, step, f'{info}: {result}')
+    log_result(is_ok, results, step, info, result)
 
     # results.append(f'{step} => failed, not implemented {info}')
 
