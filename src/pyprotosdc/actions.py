@@ -11,8 +11,11 @@ class ReportAction(str,Enum):
     EpisodicComponentReport = 'org.somda.protosdc.mdib_reporting.action.EpisodicComponentReport'
     EpisodicOperationalStateReport = 'org.somda.protosdc.mdib_reporting.action.EpisodicOperationalStateReport'
 
+
 # this is a dummy action, only used internally for subscription manager
 OperationInvokedAction = 'org.somda.protosdc.mdib_reporting.action.OperationInvokedReport'
+
+EpisodicReportAction = 'org.somda.protosdc.mdib_reporting.action.EpisodicReport'
 
 
 class GetAction(str, Enum):

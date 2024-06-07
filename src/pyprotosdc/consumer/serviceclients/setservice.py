@@ -10,7 +10,7 @@ from sdc11073 import  observableproperties
 from sdc11073.definitions_sdc import SdcV1Definitions
 from pyprotosdc.mapping.statesmapper import generic_state_to_p
 from pyprotosdc.mapping.basic_mappers import decimal_to_p
-
+from pyprotosdc.actions import OperationInvokedAction
 
 if TYPE_CHECKING:
     from concurrent.futures import Future
@@ -113,6 +113,9 @@ class SetServiceWrapper:
         """Method runs in background thread"""
         self._logger.info('start reading operation invoked reports')
         request = sdc_messages_pb2.OperationInvokedReportRequest()
+        request.addressing.message_id = uuid.uuid4().urn
+        request.addressing.action = OperationInvokedAction
+
         for response in self._stub.OperationInvokedReport(request):
             # write to observable
             self.operation_invoked_report = response

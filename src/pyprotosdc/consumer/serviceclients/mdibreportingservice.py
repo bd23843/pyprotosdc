@@ -1,6 +1,7 @@
 from __future__ import annotations
 import logging
 import threading
+import uuid
 import traceback
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -10,10 +11,10 @@ from sdc11073.mdib.mdibbase import MdibVersionGroup
 
 from pyprotosdc.mapping.mapping_helpers import get_p_attr
 from pyprotosdc.mapping.msgtypes_mappers import get_mdib_version_group
-from pyprotosdc.actions import ReportAction
+from pyprotosdc.actions import ReportAction, EpisodicReportAction
+
 if TYPE_CHECKING:
     from pyprotosdc.msgreader import MessageReader
-    # from sdc11073.xml_types.actions import Actions
 
 
 @dataclass
@@ -41,6 +42,10 @@ class MdibReportingServiceWrapper:
     def _read_episodic_reports(self):
         """Method is executed in a thread."""
         request = sdc_messages_pb2.EpisodicReportRequest()
+        request.addressing.message_id = uuid.uuid4().urn
+        request.addressing.action = EpisodicReportAction
+
+        request.addressing
         # no filter means all
         # f = request.filter.action_filter.action
         # actions = [ReportAction.Waveform,
