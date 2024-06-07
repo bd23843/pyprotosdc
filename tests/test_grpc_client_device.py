@@ -525,6 +525,17 @@ class TestClientSomeDeviceGRPC(unittest.TestCase):
         ret = self.sdc_consumer.get_service.get_context_states()
         self.assertEqual(len(ret.states), len(self.sdc_provider.mdib.context_states.objects))
         self.assertTrue(ret.p_response.payload.abstract_get_response.HasField('mdib_version_group_attr'))
+        locations = self.sdc_provider.mdib.context_states.NODETYPE.get(pm_qnames.LocationContextState)
+
+        ret2 = self.sdc_consumer.get_service.get_context_states([locations[0].DescriptorHandle])
+        self.assertGreaterEqual(len(ret.states), 1)
+        for state in ret2.states:
+            self.assertEqual(state.DescriptorHandle, locations[0].DescriptorHandle)
+
+        ret3 = self.sdc_consumer.get_service.get_context_states([locations[0].Handle])
+        self.assertEqual(len(ret3.states), 1)
+        self.assertEqual(ret3.states[0].Handle, locations[0].Handle)
+
 
     def test_get_Mdib(self):
         self.sdc_consumer.subscribe_all()
@@ -537,9 +548,17 @@ class TestClientSomeDeviceGRPC(unittest.TestCase):
         ret = self.sdc_consumer.get_service.get_md_state()
         self.assertEqual(len(ret.states), len(self.sdc_provider.mdib.states.objects))
         self.assertTrue(ret.p_response.payload.abstract_get_response.HasField('mdib_version_group_attr'))
+        numeric_descriptors = self.sdc_provider.mdib.descriptions.NODETYPE.get(pm_qnames.NumericMetricDescriptor)
+        ret2 = self.sdc_consumer.get_service.get_md_state([d.Handle for d in numeric_descriptors])
+        self.assertEqual(len(ret2.states), len(numeric_descriptors))
+
 
     def test_get_md_description(self):
         self.sdc_consumer.subscribe_all()
         ret = self.sdc_consumer.get_service.get_md_description()
         self.assertEqual(len(ret.descriptors), len(self.sdc_provider.mdib.descriptions.objects))
         self.assertTrue(ret.p_response.payload.abstract_get_response.HasField('mdib_version_group_attr'))
+        numeric_descriptors = self.sdc_provider.mdib.descriptions.NODETYPE.get(pm_qnames.NumericMetricDescriptor)
+        ret2 = self.sdc_consumer.get_service.get_md_description([d.Handle for d in numeric_descriptors])
+        # it is allowed to return more than the requested descriptors
+        self.assertGreaterEqual(len(ret2.descriptors), len(numeric_descriptors))
