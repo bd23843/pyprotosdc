@@ -228,6 +228,7 @@ def run_ref_test():
     # other_alert_updates = defaultdict(list)
     alert_system_updates = defaultdict(list)
     component_updates = defaultdict(list)
+    operation_updates = defaultdict(list)
     waveform_updates = defaultdict(list)
     description_updates = []
 
@@ -258,6 +259,12 @@ def run_ref_test():
             print(f'State {v.NODETYPE.localname} {v.DescriptorHandle}')
             component_updates[k].append(v)
 
+    def on_operational_state_updates(operation_by_handle):
+        for k, v in operation_by_handle.items():
+            print(f'Operational State {v.NODETYPE.localname} {v.DescriptorHandle}')
+            operation_updates[k].append(v)
+
+
     def on_waveform_updates(waveforms_by_handle):
         for k, v in waveforms_by_handle.items():
             waveform_updates[k].append(v)
@@ -268,6 +275,7 @@ def run_ref_test():
     observableproperties.bind(mdib, metrics_by_handle=on_metric_updates)
     observableproperties.bind(mdib, alert_by_handle=on_alert_updates)
     observableproperties.bind(mdib, component_by_handle=on_component_updates)
+    observableproperties.bind(mdib, operation_by_handle=on_operational_state_updates)
     observableproperties.bind(mdib, waveform_by_handle=on_waveform_updates)
     observableproperties.bind(mdib, description_modifications=on_description_modification)
 
@@ -351,8 +359,20 @@ def run_ref_test():
     log_result(is_ok, results, step, info)
 
     step = '4h'
-    info = 'Enable/Disable operations'
-    results.append(f'{step} => failed, not implemented {info}')
+    info = 'Count Enable/Disable operations'
+    print(step, info)
+    print(operation_updates)
+    total_count = sum([len(x) for x in operation_updates.values()])
+    if total_count > 0:
+        is_ok = True
+        result = f'got {total_count} operational state updates'
+    else:
+        is_ok = False
+        result = 'got no operational state updates'
+
+    log_result(is_ok, results, step, f'{info}: {result}')
+
+    # results.append(f'{step} => failed, not implemented {info}')
 
     """
     5 Description Modifications:
@@ -505,19 +525,19 @@ def run_ref_test():
             future_object = client.set_service.set_value(operation.Handle, Decimal(42))
             try:
                 operation_result = future_object.result(timeout=4)
+                if len(operation_result.report_parts) == 0:
+                    log_result(False, results, step, info, 'no notification')
+                elif len(operation_result.report_parts) > 1:
+                    log_result(False, results, step, info, f'got {len(operation_result.report_parts)} notifications, expect only one')
+                else:
+                    log_result(True, results, step, info, f'got {len(operation_result.report_parts)} notifications')
+                if operation_result.InvocationInfo.InvocationState != msg_types.InvocationState.FINISHED:
+                    log_result(False, results, step, info,
+                               f'got result {operation_result.InvocationInfo.InvocationState} '
+                               f'{operation_result.InvocationInfo.InvocationError} '
+                               f'{operation_result.InvocationInfo.InvocationErrorMessage}')
             except TimeoutError:
                 log_result(False, results, step, info, 'timeout')
-            if len(operation_result.report_parts) == 0:
-                log_result(False, results, step, info, 'no notification')
-            elif len(operation_result.report_parts) > 1:
-                log_result(False, results, step, info, f'got {len(operation_result.report_parts)} notifications, expect only one')
-            else:
-                log_result(True, results, step, info, f'got {len(operation_result.report_parts)} notifications')
-            if operation_result.InvocationInfo.InvocationState != msg_types.InvocationState.FINISHED:
-                log_result(False, results, step, info,
-                           f'got result {operation_result.InvocationInfo.InvocationState} '
-                           f'{operation_result.InvocationInfo.InvocationError} '
-                           f'{operation_result.InvocationInfo.InvocationErrorMessage}')
     except Exception as ex:
         print(traceback.format_exc())
         log_result(False, results, step, info, ex)
