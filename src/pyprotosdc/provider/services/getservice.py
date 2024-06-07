@@ -185,6 +185,7 @@ class GetService(sdc_services_pb2_grpc.GetServiceServicer):
 
     def GetMdDescription(self, request, context):
         try:
+            # ignore requested handles, always return all
             response = GetMdDescriptionResponse()
             mdib_version_group_msg = get_p_attr(response.payload.abstract_get_response, 'MdibVersionGroup')
             set_mdib_version_group(mdib_version_group_msg, self._mdib.mdib_version_group)
@@ -201,11 +202,26 @@ class GetService(sdc_services_pb2_grpc.GetServiceServicer):
 
     def GetMdState(self, request, context):
         try:
-            requested_handles = request.payload.handle_ref
+            requested_handles = [h.string for h in request.payload.handle_ref]
             if not requested_handles:
                 states = self._mdib.states.objects
             else:
-                states = [self._mdib.states.descriptor_handle.get_one(h.string) for h in requested_handles]
+                states = set()  # avoid double entries
+                for handle in requested_handles:
+                    # If a HANDLE reference does match a multi state HANDLE, the corresponding multi state
+                    # SHALL be included in the result list
+                    tmp = self._mdib.context_states.handle.get_one(handle, allow_none=True)
+                    if tmp:
+                        states.add(tmp)
+                    if not tmp:
+                        # If a HANDLE reference does match a descriptor HANDLE, all states that belong to
+                        # the corresponding descriptor SHALL be included in the result list
+                        tmp = self._mdib.states.descriptor_handle.get(handle, [])
+                        tmp.extend(self._mdib.context_states.descriptor_handle.get(handle, []))
+                        if tmp:
+                            for state in tmp:
+                                states.add(state)
+
             response = GetMdStateResponse()
             mdib_version_group_msg = get_p_attr(response.payload.abstract_get_response, 'MdibVersionGroup')
             set_mdib_version_group(mdib_version_group_msg, self._mdib.mdib_version_group)
@@ -218,15 +234,37 @@ class GetService(sdc_services_pb2_grpc.GetServiceServicer):
             raise
 
     def GetContextStates(self, request, context):
+        response = GetContextStatesResponse()
+        mdib_version_group_msg = get_p_attr(response.payload.abstract_get_response, 'MdibVersionGroup')
+        set_mdib_version_group(mdib_version_group_msg, self._mdib.mdib_version_group)
         try:
-            requested_handles = request.payload.handle_ref
+            requested_handles = [h.string for h in request.payload.handle_ref]
             if not requested_handles:
                 states = self._mdib.context_states.objects
             else:
-                states = [self._mdib.context_states.descriptor_handle.get_one(h.string) for h in requested_handles]
-            response = GetContextStatesResponse()
-            mdib_version_group_msg = get_p_attr(response.payload.abstract_get_response, 'MdibVersionGroup')
-            set_mdib_version_group(mdib_version_group_msg, self._mdib.mdib_version_group)
+                states_dict = {}
+                for handle in requested_handles:
+                    # If a HANDLE reference does match a multi state HANDLE,
+                    # the corresponding multi state SHALL be included in the result list
+                    tmp = self._mdib.context_states.handle.get_one(handle, allow_none=True)
+                    if tmp:
+                        tmp = [tmp]
+                    if not tmp:
+                        # If a HANDLE reference does match a descriptor HANDLE,
+                        # all states that belong to the corresponding descriptor SHALL be included in the result list
+                        tmp = self._mdib.context_states.descriptor_handle.get(handle)
+                    if not tmp:
+                        # If a HANDLE reference from the msg:GetContextStates/msg:HandleRef list does match an
+                        # MDS descriptor, then all context states that are part of this MDS SHALL be included in the result list.
+                        descr = self._mdib.descriptions.handle.get_one(handle, allow_none=True)
+                        if descr:
+                            if pm_qnames.MdsDescriptor == descr.NODETYPE:
+                                tmp = list(self._mdib.context_states.objects)
+                    if tmp:
+                        for state in tmp:
+                            states_dict[state.Handle] = state
+                states = states_dict.values()
+                # states = [self._mdib.context_states.descriptor_handle.get_one(h.string) for h in requested_handles]
 
             _md_state_to_p(states, response.payload.context_state)
             return response
