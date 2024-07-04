@@ -1,11 +1,14 @@
 import unittest
 from decimal import Decimal
-from sdc11073.xml_types import pm_types as pmtypes
+from lxml import etree
+from sdc11073.xml_types import pm_types
+from sdc11073.xml_types import msg_qnames
 from sdc11073.namespaces import default_ns_helper as nsh
 
 from sdc11073.mdib import descriptorcontainers as dc
 from sdc11073.loghelper import basic_logging_setup
 from pyprotosdc.mapping import descriptorsmapper as dm
+from pyprotosdc.mapping.extension_mapping import extension_to_p
 
 class TestDescriptorsMapper(unittest.TestCase):
     def setUp(self) -> None:
@@ -22,8 +25,8 @@ class TestDescriptorsMapper(unittest.TestCase):
 
     def test_mds_descriptor(self):
         mds_max = dc.MdsDescriptorContainer('my_handle', 'p_handle')
-        mds_max.ProductionSpecification = [pmtypes.ProductionSpecification(pmtypes.CodedValue('abc', 'def'), 'prod_spec')]
-        mds_max.Manufacturer = [pmtypes.LocalizedText('some_company')]
+        mds_max.ProductionSpecification = [pm_types.ProductionSpecification(pm_types.CodedValue('abc', 'def'), 'prod_spec')]
+        mds_max.Manufacturer = [pm_types.LocalizedText('some_company')]
         mds_min = dc.MdsDescriptorContainer('my_handle', None)
         for obj in (mds_max, mds_min):
             self.check_convert(obj)
@@ -38,7 +41,7 @@ class TestDescriptorsMapper(unittest.TestCase):
 
     def test_clock_descriptor(self):
         descr_max = dc.ClockDescriptorContainer('my_handle', 'p_handle')
-        descr_max.TimeProtocol = [pmtypes.CodedValue('abc', 'def'), pmtypes.CodedValue('123', '456')]
+        descr_max.TimeProtocol = [pm_types.CodedValue('abc', 'def'), pm_types.CodedValue('123', '456')]
         descr_max.Resolution = 42.1
         descr_min = dc.ClockDescriptorContainer('my_handle', None)
         for obj in (descr_max, descr_min):
@@ -46,9 +49,9 @@ class TestDescriptorsMapper(unittest.TestCase):
 
     def test_battery_descriptor(self):
         descr_max = dc.BatteryDescriptorContainer('my_handle', 'p_handle')
-        descr_max.CapacityFullCharge = pmtypes.Measurement(Decimal('11'), pmtypes.CodedValue('ah'))
-        descr_max.CapacitySpecified = pmtypes.Measurement(Decimal('12'), pmtypes.CodedValue('ah'))
-        descr_max.VoltageSpecified = pmtypes.Measurement(Decimal('6'), pmtypes.CodedValue('v'))
+        descr_max.CapacityFullCharge = pm_types.Measurement(Decimal('11'), pm_types.CodedValue('ah'))
+        descr_max.CapacitySpecified = pm_types.Measurement(Decimal('12'), pm_types.CodedValue('ah'))
+        descr_max.VoltageSpecified = pm_types.Measurement(Decimal('6'), pm_types.CodedValue('v'))
         descr_min = dc.BatteryDescriptorContainer('my_handle', None)
         for obj in (descr_max, descr_min):
             self.check_convert(obj)
@@ -60,19 +63,19 @@ class TestDescriptorsMapper(unittest.TestCase):
     def test_numeric_metric_descriptor(self):
         # properties of AbstractMetricDescriptorContainer
         descr_max = dc.NumericMetricDescriptorContainer('my_handle', 'p_handle')
-        descr_max.Unit = pmtypes.CodedValue('ah')
-        descr_max.BodySite = [pmtypes.CodedValue('ah')]
-        descr_max.Relation = [pmtypes.Relation()]
-        descr_max.MetricCategory = pmtypes.MetricCategory.PRESETTING #'Preset'
-        descr_max.DerivationMethod = pmtypes.DerivationMethod.MANUAL #'Man'
-        descr_max.MetricAvailability = pmtypes.MetricAvailability.INTERMITTENT
+        descr_max.Unit = pm_types.CodedValue('ah')
+        descr_max.BodySite = [pm_types.CodedValue('ah')]
+        descr_max.Relation = [pm_types.Relation()]
+        descr_max.MetricCategory = pm_types.MetricCategory.PRESETTING #'Preset'
+        descr_max.DerivationMethod = pm_types.DerivationMethod.MANUAL #'Man'
+        descr_max.MetricAvailability = pm_types.MetricAvailability.INTERMITTENT
         descr_max.MaxMeasurementTime = 3
         descr_max.MaxDelayTime = 1
         descr_max.DeterminationPeriod = 1
         descr_max.LifeTimePeriod = 2
         descr_max.ActivationDuration = 3
         # properties of NumericMetricDescriptorContainer
-        descr_max.TechnicalRange = [pmtypes.Range(Decimal(0),Decimal(20), Decimal(0.5))]
+        descr_max.TechnicalRange = [pm_types.Range(Decimal(0), Decimal(20), Decimal(0.5))]
         descr_max.Resolution = Decimal('0.01')
         descr_max.AveragingPeriod = 0.02
 
@@ -85,12 +88,12 @@ class TestDescriptorsMapper(unittest.TestCase):
     def test_string_metric_descriptor(self):
         # properties of AbstractMetricDescriptorContainer
         descr_max = dc.StringMetricDescriptorContainer('my_handle', 'p_handle')
-        descr_max.Unit = pmtypes.CodedValue('ah')
-        descr_max.BodySite = [pmtypes.CodedValue('ah')]
-        descr_max.Relation = [pmtypes.Relation()]
-        descr_max.MetricCategory = pmtypes.MetricCategory.PRESETTING #'Preset'
-        descr_max.DerivationMethod = pmtypes.DerivationMethod.MANUAL #'Man'
-        descr_max.MetricAvailability = pmtypes.MetricAvailability.INTERMITTENT
+        descr_max.Unit = pm_types.CodedValue('ah')
+        descr_max.BodySite = [pm_types.CodedValue('ah')]
+        descr_max.Relation = [pm_types.Relation()]
+        descr_max.MetricCategory = pm_types.MetricCategory.PRESETTING #'Preset'
+        descr_max.DerivationMethod = pm_types.DerivationMethod.MANUAL #'Man'
+        descr_max.MetricAvailability = pm_types.MetricAvailability.INTERMITTENT
         descr_max.MaxMeasurementTime = 3
         descr_max.MaxDelayTime = 1
         descr_max.DeterminationPeriod = 1
@@ -105,19 +108,19 @@ class TestDescriptorsMapper(unittest.TestCase):
     def test_enum_string_metric_descriptor(self):
         # properties of AbstractMetricDescriptorContainer
         descr_max = dc.EnumStringMetricDescriptorContainer('my_handle', 'p_handle')
-        descr_max.Unit = pmtypes.CodedValue('ah')
-        descr_max.BodySite = [pmtypes.CodedValue('ah')]
-        descr_max.Relation = [pmtypes.Relation()]
-        descr_max.MetricCategory = pmtypes.MetricCategory.PRESETTING #'Preset'
-        descr_max.DerivationMethod = pmtypes.DerivationMethod.MANUAL #'Man'
-        descr_max.MetricAvailability = pmtypes.MetricAvailability.INTERMITTENT
+        descr_max.Unit = pm_types.CodedValue('ah')
+        descr_max.BodySite = [pm_types.CodedValue('ah')]
+        descr_max.Relation = [pm_types.Relation()]
+        descr_max.MetricCategory = pm_types.MetricCategory.PRESETTING #'Preset'
+        descr_max.DerivationMethod = pm_types.DerivationMethod.MANUAL #'Man'
+        descr_max.MetricAvailability = pm_types.MetricAvailability.INTERMITTENT
         descr_max.MaxMeasurementTime = 3
         descr_max.MaxDelayTime = 1
         descr_max.DeterminationPeriod = 1
         descr_max.LifeTimePeriod = 2
         descr_max.ActivationDuration = 3
-        descr_max.AllowedValue = [pmtypes.AllowedValue('an_allowed_value', pmtypes.CodedValue('abc')),
-                                  pmtypes.AllowedValue('another_allowed_value', pmtypes.CodedValue('def'))]
+        descr_max.AllowedValue = [pm_types.AllowedValue('an_allowed_value', pm_types.CodedValue('abc')),
+                                  pm_types.AllowedValue('another_allowed_value', pm_types.CodedValue('def'))]
 
         descr_min = dc.StringMetricDescriptorContainer('my_handle', None)
         descr_min.Resolution = Decimal('0.02')
@@ -127,19 +130,19 @@ class TestDescriptorsMapper(unittest.TestCase):
     def test_realtime_sample_array_metric_descriptor(self):
         # properties of AbstractMetricDescriptorContainer
         descr_max = dc.RealTimeSampleArrayMetricDescriptorContainer('my_handle', 'p_handle')
-        descr_max.Unit = pmtypes.CodedValue('ah')
-        descr_max.BodySite = [pmtypes.CodedValue('ah')]
-        descr_max.Relation = [pmtypes.Relation()]
-        descr_max.MetricCategory = pmtypes.MetricCategory.PRESETTING #'Preset'
-        descr_max.DerivationMethod = pmtypes.DerivationMethod.MANUAL #'Man'
-        descr_max.MetricAvailability = pmtypes.MetricAvailability.INTERMITTENT
+        descr_max.Unit = pm_types.CodedValue('ah')
+        descr_max.BodySite = [pm_types.CodedValue('ah')]
+        descr_max.Relation = [pm_types.Relation()]
+        descr_max.MetricCategory = pm_types.MetricCategory.PRESETTING #'Preset'
+        descr_max.DerivationMethod = pm_types.DerivationMethod.MANUAL #'Man'
+        descr_max.MetricAvailability = pm_types.MetricAvailability.INTERMITTENT
         descr_max.MaxMeasurementTime = 3
         descr_max.MaxDelayTime = 1
         descr_max.DeterminationPeriod = 1
         descr_max.LifeTimePeriod = 2
         descr_max.ActivationDuration = 3
 
-        descr_max.TechnicalRange = [pmtypes.Range(Decimal(0), Decimal(1))]
+        descr_max.TechnicalRange = [pm_types.Range(Decimal(0), Decimal(1))]
         descr_max.Resolution = Decimal('0.02')
         descr_max.SamplePeriod = 0.005
         descr_min = dc.RealTimeSampleArrayMetricDescriptorContainer('my_handle', None)
@@ -151,22 +154,22 @@ class TestDescriptorsMapper(unittest.TestCase):
     def test_distribution_sample_array_metric_descriptor(self):
         # properties of AbstractMetricDescriptorContainer
         descr_max = dc.DistributionSampleArrayMetricDescriptorContainer('my_handle', 'p_handle')
-        descr_max.Unit = pmtypes.CodedValue('ah')
-        descr_max.BodySite = [pmtypes.CodedValue('ah')]
-        descr_max.Relation = [pmtypes.Relation()]
-        descr_max.MetricCategory = pmtypes.MetricCategory.PRESETTING #'Preset'
-        descr_max.DerivationMethod = pmtypes.DerivationMethod.MANUAL #'Man'
-        descr_max.MetricAvailability = pmtypes.MetricAvailability.INTERMITTENT
+        descr_max.Unit = pm_types.CodedValue('ah')
+        descr_max.BodySite = [pm_types.CodedValue('ah')]
+        descr_max.Relation = [pm_types.Relation()]
+        descr_max.MetricCategory = pm_types.MetricCategory.PRESETTING #'Preset'
+        descr_max.DerivationMethod = pm_types.DerivationMethod.MANUAL #'Man'
+        descr_max.MetricAvailability = pm_types.MetricAvailability.INTERMITTENT
         descr_max.MaxMeasurementTime = 3
         descr_max.MaxDelayTime = 1
         descr_max.DeterminationPeriod = 1
         descr_max.LifeTimePeriod = 2
         descr_max.ActivationDuration = 3
 
-        descr_max.TechnicalRange = [pmtypes.Range(Decimal(0), Decimal(1))]
+        descr_max.TechnicalRange = [pm_types.Range(Decimal(0), Decimal(1))]
         descr_max.Resolution = Decimal('0.02')
-        descr_max.DomainUnit = pmtypes.CodedValue('abc')
-        descr_max.DistributionRange = pmtypes.Range(Decimal(0), Decimal(200), Decimal(0),Decimal(1))
+        descr_max.DomainUnit = pm_types.CodedValue('abc')
+        descr_max.DistributionRange = pm_types.Range(Decimal(0), Decimal(200), Decimal(0), Decimal(1))
         descr_min = dc.DistributionSampleArrayMetricDescriptorContainer('my_handle', None)
         descr_min.Resolution = Decimal('0.02')
         for obj in (descr_max, descr_min):
@@ -238,8 +241,8 @@ class TestDescriptorsMapper(unittest.TestCase):
     def test_activate_operation_descriptor(self):
         descr_max = dc.ActivateOperationDescriptorContainer('my_handle', 'p_handle')
         self._set_abstract_set_state_operation_descriptor(descr_max, True)
-        descr_max.Argument = [pmtypes.ActivateOperationDescriptorArgument(pmtypes.CodedValue('aaa'), nsh.PM.tag('oh')),
-                              pmtypes.ActivateOperationDescriptorArgument(pmtypes.CodedValue('bbb'), nsh.PM.tag('nooo')),]
+        descr_max.Argument = [pm_types.ActivateOperationDescriptorArgument(pm_types.CodedValue('aaa'), nsh.PM.tag('oh')),
+                              pm_types.ActivateOperationDescriptorArgument(pm_types.CodedValue('bbb'), nsh.PM.tag('nooo')), ]
         descr_min = dc.ActivateOperationDescriptorContainer('my_handle', None)
         self._set_abstract_set_state_operation_descriptor(descr_min, True)
         for obj in (descr_max, descr_min):
@@ -250,8 +253,8 @@ class TestDescriptorsMapper(unittest.TestCase):
         descr_max.MaxPhysiologicalParallelAlarms = 3
         descr_max.MaxTechnicalParallelAlarms = 2
         descr_max.SelfCheckPeriod = 60.0
-        descr_max.Argument = [pmtypes.ActivateOperationDescriptorArgument(pmtypes.CodedValue('aaa'),nsh.PM.tag('oh')),
-                              pmtypes.ActivateOperationDescriptorArgument(pmtypes.CodedValue('bbb'), nsh.PM.tag('nooo')),]
+        descr_max.Argument = [pm_types.ActivateOperationDescriptorArgument(pm_types.CodedValue('aaa'), nsh.PM.tag('oh')),
+                              pm_types.ActivateOperationDescriptorArgument(pm_types.CodedValue('bbb'), nsh.PM.tag('nooo')), ]
         descr_min = dc.AlertSystemDescriptorContainer('my_handle', None)
         for obj in (descr_max, descr_min):
             self.check_convert(obj)
@@ -259,13 +262,13 @@ class TestDescriptorsMapper(unittest.TestCase):
     def test_alert_condition_descriptor(self):
         descr_max = dc.AlertConditionDescriptorContainer('my_handle', 'p_handle')
         descr_max.Source = ['a', 'b']
-        descr_max.CauseInfo = [pmtypes.CauseInfo(pmtypes.RemedyInfo([pmtypes.LocalizedText('rembla')]),
-                                   [pmtypes.LocalizedText('caubla')])]
-        descr_max.Kind = pmtypes.AlertConditionKind.PHYSIOLOGICAL
-        descr_max.Priority = pmtypes.AlertConditionPriority.MEDIUM
+        descr_max.CauseInfo = [pm_types.CauseInfo(pm_types.RemedyInfo([pm_types.LocalizedText('rembla')]),
+                                                  [pm_types.LocalizedText('caubla')])]
+        descr_max.Kind = pm_types.AlertConditionKind.PHYSIOLOGICAL
+        descr_max.Priority = pm_types.AlertConditionPriority.MEDIUM
         descr_max.DefaultConditionGenerationDelay = 2.5
-        descr_max.CanEscalate = pmtypes.CanEscalate.MEDIUM
-        descr_max.CanDeescalate = pmtypes.CanDeEscalate.LOW
+        descr_max.CanEscalate = pm_types.CanEscalate.MEDIUM
+        descr_max.CanDeescalate = pm_types.CanDeEscalate.LOW
         descr_min = dc.AlertConditionDescriptorContainer('my_handle', None)
         for obj in (descr_max, descr_min):
             self.check_convert(obj)
@@ -273,14 +276,14 @@ class TestDescriptorsMapper(unittest.TestCase):
     def test_limit_alert_condition_descriptor(self):
         descr_max = dc.LimitAlertConditionDescriptorContainer('my_handle', 'p_handle')
         descr_max.Source = ['a', 'b']
-        descr_max.CauseInfo = [pmtypes.CauseInfo(pmtypes.RemedyInfo([pmtypes.LocalizedText('rembla')]),
-                                   [pmtypes.LocalizedText('caubla')])]
-        descr_max.Kind = pmtypes.AlertConditionKind.PHYSIOLOGICAL
-        descr_max.Priority = pmtypes.AlertConditionPriority.MEDIUM
+        descr_max.CauseInfo = [pm_types.CauseInfo(pm_types.RemedyInfo([pm_types.LocalizedText('rembla')]),
+                                                  [pm_types.LocalizedText('caubla')])]
+        descr_max.Kind = pm_types.AlertConditionKind.PHYSIOLOGICAL
+        descr_max.Priority = pm_types.AlertConditionPriority.MEDIUM
         descr_max.DefaultConditionGenerationDelay = 2.5
-        descr_max.CanEscalate = pmtypes.CanEscalate.MEDIUM
-        descr_max.CanDeescalate = pmtypes.CanDeEscalate.LOW
-        descr_max.MaxLimits = pmtypes.Range(Decimal(0), Decimal(10))
+        descr_max.CanEscalate = pm_types.CanEscalate.MEDIUM
+        descr_max.CanDeescalate = pm_types.CanDeEscalate.LOW
+        descr_max.MaxLimits = pm_types.Range(Decimal(0), Decimal(10))
         descr_max.AutoLimitSupported = True
         descr_min = dc.LimitAlertConditionDescriptorContainer('my_handle', None)
         for obj in (descr_max, descr_min):
@@ -289,7 +292,7 @@ class TestDescriptorsMapper(unittest.TestCase):
     def test_alert_signal_descriptor(self):
         descr_max = dc.AlertSignalDescriptorContainer('my_handle', 'p_handle')
         descr_max.ConditionSignaled = 'handle123'
-        descr_max.Manifestation = pmtypes.AlertSignalManifestation.AUD
+        descr_max.Manifestation = pm_types.AlertSignalManifestation.AUD
         descr_max.Latching = True
         descr_max.DefaultSignalGenerationDelay = 1.5
         descr_max.SignalDelegationSupported = True

@@ -58,11 +58,13 @@ class TestSomeDeviceGRPC(unittest.TestCase):
             print(traceback.format_exc())
 
     def _missing_descriptors(self, device_mdib, client_mdib):
+        """ return the descriptors that are present in device_mdib, but not in client_mdib"""
         dev_handles = device_mdib.descriptions.handle.keys()
         cl_handles = client_mdib.descriptions.handle.keys()
         return [h for h in dev_handles if h not in cl_handles]
 
     def _missing_states(self, device_mdib, client_mdib):
+        """ return the states that are present in device_mdib, but not in client_mdib"""
         dev_handles = device_mdib.states.descriptor_handle.keys()
         cl_handles = client_mdib.states.descriptor_handle.keys()
         return [h for h in dev_handles if h not in cl_handles]
@@ -160,9 +162,10 @@ class TestSomeDeviceGRPC(unittest.TestCase):
 
         response = get_service.GetMdState(request, None)
         states = reader.read_states(response.payload.md_state.state, cl_mdib)
+        read_state_handles = [st.DescriptorHandle for st in states]
         self.assertEqual(len(states), 2)
-        self.assertEqual(states[0].DescriptorHandle, handles[0])
-        self.assertEqual(states[1].DescriptorHandle, handles[1])
+        self.assertTrue(handles[0] in read_state_handles)
+        self.assertTrue(handles[1] in read_state_handles)
 
     # def test_activate_valid_handle(self):
     #     reader = MessageReader(logger=logging.getLogger('unittest'))

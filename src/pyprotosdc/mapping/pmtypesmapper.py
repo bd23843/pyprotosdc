@@ -52,7 +52,7 @@ def _logger():
     return logging.getLogger('sdc.grpc.map.pmtypes')
 
 
-_stop_iter_classes = (PropertyBasedPMType, ContainerBase, ExtensionLocalValue)
+_stop_iter_classes = (PropertyBasedPMType, ContainerBase) #, ExtensionLocalValue)
 
 
 def quality_indicator_to_p(pm_value: decimal.Decimal,

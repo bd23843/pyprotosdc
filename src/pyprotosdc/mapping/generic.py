@@ -3,7 +3,6 @@ from __future__ import annotations
 import inspect
 import logging
 from typing import Any, Callable
-
 from google.protobuf.internal.python_message import GeneratedProtocolMessageType
 from org.somda.protosdc.proto.model.biceps.abstractalertstateoneof_pb2 import AbstractAlertStateOneOfMsg
 from org.somda.protosdc.proto.model.biceps.abstractcontextstateoneof_pb2 import AbstractContextStateOneOfMsg
@@ -134,7 +133,7 @@ from .pmtypesmapper import (instance_identifier_to_oneof_p_func,
                             localized_text_from_p,
                             node_text_qname_to_p,
                             node_text_qname_from_p)
-
+from .extension_mapping import extension_from_pm, extension_from_p
 
 # _logger() = logging.getLogger('sdc.grpc.map.pmtypes')
 
@@ -142,7 +141,8 @@ def _logger():
     return logging.getLogger('sdc.grpc.map.pmtypes')
 
 
-_stop_iter_classes = (PropertyBasedPMType, ContainerBase, ExtensionLocalValue, object)
+# _stop_iter_classes = (PropertyBasedPMType, ContainerBase, ExtensionLocalValue, object)
+_stop_iter_classes = (PropertyBasedPMType, ContainerBase, object)
 
 _to_cls = {}
 _to_cls[Relation] = AbstractMetricDescriptorMsg.RelationMsg
@@ -309,7 +309,7 @@ def map_generic_to_p(pm_src: PropertyBasedPMType,
             # convention: if a class name starts with underscore, it is not part of biceps inheritance hierarchy
             continue
         elif tmp_cls is ExtensionLocalValue:
-            # Todo: handle extensions
+            extension_from_pm(pm_src, p_dest)
             continue
         elif tmp_cls in _stop_iter_classes:
             # this is a python base class, has nothing to do with biceps classes. stop here
@@ -582,7 +582,8 @@ def map_generic_from_p(p: GeneratedProtocolMessageType,
                 value = special_handler(p_src, map_generic_from_p, recurse_count + 1)
                 setattr(pm_dest, name, value)
                 _logger().debug('%s special handling tmp_cls %s done', indent, tmp_cls.__name__)
-
+            elif isinstance(p_src, ExtensionMsg):
+                extension_from_p(pm_dest, p_src, name)
             elif isinstance(dest_type, _AttributeListBase):
                 p_name = attr_name_to_p(name)
                 p_src = getattr(p_current_entry_point, p_name)
